@@ -94,7 +94,6 @@ export const createUserProfile = onDocumentWritten(
       return;
     }
 
-    const userData = event.data.after.data();
     const userId = event.params.userId;
     
     const db = getFirestore();

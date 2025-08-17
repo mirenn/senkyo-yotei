@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,9 +11,38 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
+console.log('Firebase config:', {
+  apiKey: firebaseConfig.apiKey ? '***' : 'missing',
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  storageBucket: firebaseConfig.storageBucket,
+  messagingSenderId: firebaseConfig.messagingSenderId,
+  appId: firebaseConfig.appId ? '***' : 'missing'
+});
+
 const app = initializeApp(firebaseConfig);
+console.log('Firebase app initialized:', app);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
+
+// Connect to emulators if in development mode
+const useEmulator = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
+if (useEmulator) {
+  console.log('Using Firebase Emulators');
+  try {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    console.log('Connected to Firebase Emulators');
+  } catch (error) {
+    console.warn('Failed to connect to emulators (they might already be connected):', error);
+  }
+} else {
+  console.log('Using production Firebase');
+}
+
+console.log('Firestore instance created:', db);
+console.log('Auth instance created:', auth);
+
 export default app;

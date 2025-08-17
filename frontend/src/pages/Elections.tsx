@@ -79,23 +79,6 @@ const Elections = () => {
     };
 
     fetchElections();
-
-    // Set up real-time listener (will fall back gracefully if Firebase not configured)
-    let unsubscribe: (() => void) | undefined;
-    try {
-      unsubscribe = electionService.onElectionsChange((electionsData) => {
-        setElections(electionsData);
-        setLoading(false);
-      });
-    } catch (err) {
-      console.log('Real-time listener not available:', err);
-    }
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
   }, []);
 
   if (loading) {
@@ -125,12 +108,21 @@ const Elections = () => {
       
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900">選挙一覧</h1>
-        <Link
-          to="/create-election"
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-        >
-          新しい選挙を作成
-        </Link>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            title="最新データを取得"
+          >
+            🔄 更新
+          </button>
+          <Link
+            to="/create-election"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          >
+            新しい選挙を作成
+          </Link>
+        </div>
       </div>
 
       {elections.length === 0 ? (

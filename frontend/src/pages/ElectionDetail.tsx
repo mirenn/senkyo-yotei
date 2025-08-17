@@ -14,6 +14,33 @@ const ElectionDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // データ更新用の関数
+  const refreshData = async () => {
+    if (!id) return;
+
+    try {
+      const [candidatesData, resultsData] = await Promise.all([
+        candidateService.getCandidates(id),
+        resultsService.getElectionResults(id)
+      ]);
+
+      setCandidates(candidatesData);
+      setResults(resultsData);
+
+      // ユーザーの投票も更新
+      if (state.user) {
+        const userVotes = await voteService.getUserVotes(state.user.uid);
+        if (userVotes?.elections[id]) {
+          setUserVote(userVotes.elections[id].candidateId);
+        } else {
+          setUserVote(null);
+        }
+      }
+    } catch (err) {
+      console.log('Error refreshing data:', err);
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
 
@@ -116,34 +143,6 @@ const ElectionDetail = () => {
     };
 
     fetchElectionData();
-
-    // Set up real-time listeners (will fall back gracefully if Firebase not configured)
-    let unsubscribeCandidates: (() => void) | undefined;
-    let unsubscribeResults: (() => void) | undefined;
-    let unsubscribeVotes: (() => void) | undefined;
-
-    try {
-      unsubscribeCandidates = candidateService.onCandidatesChange(id, setCandidates);
-      unsubscribeResults = resultsService.onElectionResultsChange(id, setResults);
-      
-      if (state.user) {
-        unsubscribeVotes = voteService.onUserVotesChange(state.user.uid, (votes) => {
-          if (votes?.elections[id]) {
-            setUserVote(votes.elections[id].candidateId);
-          } else {
-            setUserVote(null);
-          }
-        });
-      }
-    } catch (err) {
-      console.log('Real-time listeners not available:', err);
-    }
-
-    return () => {
-      if (unsubscribeCandidates) unsubscribeCandidates();
-      if (unsubscribeResults) unsubscribeResults();
-      if (unsubscribeVotes) unsubscribeVotes();
-    };
   }, [id, state.user]);
 
   const handleVote = async (candidateId: string) => {
@@ -155,6 +154,8 @@ const ElectionDetail = () => {
     try {
       await voteService.submitVote(state.user.uid, election.id, candidateId);
       setUserVote(candidateId);
+      // データを更新
+      refreshData();
       alert('投票が完了しました！');
     } catch (err) {
       console.log('Firestore not available, using mock behavior:', err);
@@ -170,6 +171,8 @@ const ElectionDetail = () => {
     try {
       await voteService.cancelVote(state.user.uid, election.id);
       setUserVote(null);
+      // データを更新
+      refreshData();
       alert('投票を取り消しました');
     } catch (err) {
       console.log('Firestore not available, using mock behavior:', err);
@@ -202,7 +205,16 @@ const ElectionDetail = () => {
     <div className="max-w-4xl mx-auto px-4 py-6">
       {/* Election Header */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">{election.title}</h1>
+        <div className="flex items-start justify-between mb-2">
+          <h1 className="text-3xl font-bold text-gray-900">{election.title}</h1>
+          <button
+            onClick={refreshData}
+            className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            title="最新データを取得"
+          >
+            🔄 更新
+          </button>
+        </div>
         <p className="text-gray-600 mb-4">{election.description}</p>
         <div className="flex items-center space-x-4 text-sm text-gray-500">
           <span>投票期間: {election.startDate.toLocaleDateString()} - {election.endDate.toLocaleDateString()}</span>

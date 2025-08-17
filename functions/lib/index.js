@@ -78,7 +78,6 @@ exports.createUserProfile = (0, firestore_1.onDocumentWritten)("users/{userId}",
     if (!((_b = (_a = event.data) === null || _a === void 0 ? void 0 : _a.after) === null || _b === void 0 ? void 0 : _b.exists)) {
         return;
     }
-    const userData = event.data.after.data();
     const userId = event.params.userId;
     const db = (0, firestore_2.getFirestore)();
     // Initialize empty votes document for new user
