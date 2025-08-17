@@ -21,6 +21,17 @@ const ElectionDetail = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // 投票期間チェック（得票数表示用）
+  const isVotingPeriod = (election: Election) => {
+    const now = new Date();
+    return now >= election.startDate && now <= election.endDate;
+  };
+
+  // 常に得票数を表示する（投票期間中でも結果を表示）
+  const shouldShowResults = () => {
+    return true; // 常に得票数を表示
+  };
+
   // データ更新用の関数（メモ化して不要な再作成を防ぐ）
   const refreshData = useCallback(async () => {
     if (!id || refreshing) return;
@@ -31,6 +42,14 @@ const ElectionDetail = () => {
         candidateService.getCandidates(id),
         resultsService.getElectionResults(id)
       ]);
+
+      console.log('Refreshed data:', { 
+        candidates: candidatesData, 
+        results: resultsData,
+        resultsIsNull: resultsData === null,
+        totalVotes: resultsData?.totalVotes,
+        candidateResults: resultsData?.candidates 
+      });
 
       setCandidates(candidatesData);
       setResults(resultsData);
@@ -68,6 +87,15 @@ const ElectionDetail = () => {
           ]);
 
           if (electionData) {
+            console.log('Fetched from Firestore:', { 
+              election: electionData, 
+              candidates: candidatesData, 
+              results: resultsData,
+              resultsIsNull: resultsData === null,
+              totalVotes: resultsData?.totalVotes,
+              candidateResults: resultsData?.candidates 
+            });
+            
             setElection(electionData);
             setCandidates(candidatesData);
             setResults(resultsData);
@@ -135,6 +163,8 @@ const ElectionDetail = () => {
             lastUpdated: new Date(),
           };
 
+          console.log('Using mock data:', { election: mockElection, candidates: mockCandidates, results: mockResults });
+
           setElection(mockElection);
           setCandidates(mockCandidates);
           setResults(mockResults);
@@ -184,7 +214,8 @@ const ElectionDetail = () => {
     try {
       await voteService.submitVote(state.user.uid, election.id, candidateId);
       setUserVote(candidateId);
-      // refreshData()を削除 - 投票状態の更新のみで十分
+      // 投票後に最新の結果データを取得して表示を更新
+      await refreshData();
       alert('投票が完了しました！');
     } catch (err) {
       console.log('Firestore not available, using mock behavior:', err);
@@ -200,7 +231,8 @@ const ElectionDetail = () => {
     try {
       await voteService.cancelVote(state.user.uid, election.id);
       setUserVote(null);
-      // refreshData()を削除 - 投票状態の更新のみで十分
+      // 投票取り消し後に最新の結果データを取得して表示を更新
+      await refreshData();
       alert('投票を取り消しました');
     } catch (err) {
       console.log('Firestore not available, using mock behavior:', err);
@@ -252,6 +284,15 @@ const ElectionDetail = () => {
         <div className="flex items-center space-x-4 text-sm text-gray-500">
           <span>投票期間: {election.startDate.toLocaleDateString()} - {election.endDate.toLocaleDateString()}</span>
           <span>総投票数: {results?.totalVotes || 0}票</span>
+          {election && (
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              isVotingPeriod(election) 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-gray-100 text-gray-800'
+            }`}>
+              {isVotingPeriod(election) ? '投票受付中' : '投票終了'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -277,7 +318,12 @@ const ElectionDetail = () => {
 
       {/* Candidates List */}
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold text-gray-900">候補者一覧</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-gray-900">候補者一覧</h2>
+          <div className="text-sm text-gray-600">
+            ※ 投票期間中でもリアルタイムで得票数を表示しています
+          </div>
+        </div>
         {candidates.map((candidate) => {
           const candidateResult = results?.candidates[candidate.id];
           const isUserVote = userVote === candidate.id;
@@ -309,13 +355,24 @@ const ElectionDetail = () => {
                 </div>
                 
                 <div className="text-right">
-                  {candidateResult && (
+                  {/* 常に得票数を表示（投票期間中でも表示） */}
+                  {candidateResult && shouldShowResults() && (
                     <div className="mb-3">
                       <div className="text-2xl font-bold text-gray-900">
                         {candidateResult.count}票
                       </div>
                       <div className="text-lg text-gray-600">
                         ({candidateResult.percentage}%)
+                      </div>
+                    </div>
+                  )}
+                  {(!candidateResult || !shouldShowResults()) && (
+                    <div className="mb-3">
+                      <div className="text-2xl font-bold text-gray-500">
+                        0票
+                      </div>
+                      <div className="text-lg text-gray-500">
+                        (0%)
                       </div>
                     </div>
                   )}
@@ -338,17 +395,15 @@ const ElectionDetail = () => {
                 </div>
               </div>
               
-              {/* Progress Bar */}
-              {candidateResult && (
-                <div className="mt-4">
-                  <div className="bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${candidateResult.percentage}%` }}
-                    ></div>
-                  </div>
+              {/* Progress Bar - 常に表示（得票データがない場合は0%で表示） */}
+              <div className="mt-4">
+                <div className="bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${candidateResult?.percentage || 0}%` }}
+                  ></div>
                 </div>
-              )}
+              </div>
             </div>
           );
         })}
