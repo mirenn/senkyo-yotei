@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to hash user ID (this would be implemented in Cloud Functions)
+    function getHashedUserId(uid) {
+      // In production, this would be a proper hash function
+      // For now, this is a placeholder that can't actually be used in rules
+      return uid;
+    }
+    
+    // Elections - readable by all, writable by authenticated users
+    match /elections/{electionId} {
+      allow read: if true;
+      allow create: if request.auth != null && 
+        request.auth.uid != null &&
+        resource == null;
+      allow update, delete: if request.auth != null && 
+        request.auth.uid == resource.data.createdBy;
+      
+      // Candidates subcollection
+      match /candidates/{candidateId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && 
+          request.auth.uid == get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy;
+      }
+    }
+    
+    // Users - only readable/writable by the user themselves
+    // Note: In production, userIds would be hashed
+    match /users/{userId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
+    }
+    
+    // Votes - only readable/writable by the user themselves
+    // Note: In production, userIds would be hashed
+    match /votes/{userId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == userId;
+    }
+    
+    // Election results - readable by all, writable only by Cloud Functions
+    match /electionResults/{electionId} {
+      allow read: if true;
+      allow write: if false; // Only Cloud Functions can update
+    }
+  }
+}
