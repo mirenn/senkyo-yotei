@@ -66,8 +66,7 @@
 - ❌ Cloud Functions deployment (needs npm install in functions/)
 
 #### Advanced Features
-- ✅ Basic user ID handling
-- ❌ Production-level user ID hashing for privacy
+- ✅ Simplified user ID handling (using direct UIDs for easier management)
 - ❌ Advanced security measures (rate limiting, etc.)
 - ❌ Email notifications or other communication features
 
@@ -129,8 +128,8 @@ App runs with mock data, full UI functionality
 
 ### Medium Priority
 1. **Add comprehensive testing** suite
-2. **Implement proper user ID hashing** for privacy
-3. **Add admin functionality** for election management
+2. **Add admin functionality** for election management
+3. **Advanced security measures** (rate limiting, App Check)
 
 ### Low Priority
 1. **Performance optimizations** (code splitting, caching)
