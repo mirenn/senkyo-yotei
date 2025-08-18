@@ -43,12 +43,15 @@ const ElectionDetail = () => {
         resultsService.getElectionResults(id)
       ]);
 
-      console.log('Refreshed data:', { 
+      console.log('🔄 [REFRESH] Refreshed election data:', { 
+        electionId: id,
+        candidatesCount: candidatesData.length,
         candidates: candidatesData, 
         results: resultsData,
         resultsIsNull: resultsData === null,
         totalVotes: resultsData?.totalVotes,
-        candidateResults: resultsData?.candidates 
+        candidateResults: resultsData?.candidates,
+        timestamp: new Date().toISOString()
       });
 
       setCandidates(candidatesData);
@@ -87,13 +90,17 @@ const ElectionDetail = () => {
           ]);
 
           if (electionData) {
-            console.log('Fetched from Firestore:', { 
+            console.log('📥 [FIRESTORE] Successfully fetched from Firestore:', { 
+              electionId: id,
+              electionTitle: electionData.title,
+              candidatesCount: candidatesData.length,
               election: electionData, 
               candidates: candidatesData, 
               results: resultsData,
               resultsIsNull: resultsData === null,
               totalVotes: resultsData?.totalVotes,
-              candidateResults: resultsData?.candidates 
+              candidateResults: resultsData?.candidates,
+              timestamp: new Date().toISOString()
             });
             
             setElection(electionData);
@@ -111,7 +118,8 @@ const ElectionDetail = () => {
             throw new Error('Election not found in Firestore');
           }
         } catch (firestoreError) {
-          console.log('Firestore not available, using mock data:', firestoreError);
+          console.log('⚠️ [FIRESTORE] Firestore not available, using mock data:', firestoreError);
+          console.log('🎭 [MOCK] Generating mock data for electionId:', id);
           
           // Fall back to mock data
           const mockElection: Election = {
@@ -163,7 +171,15 @@ const ElectionDetail = () => {
             lastUpdated: new Date(),
           };
 
-          console.log('Using mock data:', { election: mockElection, candidates: mockCandidates, results: mockResults });
+          console.log('🎭 [MOCK] Using mock data:', { 
+            electionId: id,
+            electionTitle: mockElection.title,
+            candidatesCount: mockCandidates.length,
+            election: mockElection, 
+            candidates: mockCandidates, 
+            results: mockResults,
+            timestamp: new Date().toISOString()
+          });
 
           setElection(mockElection);
           setCandidates(mockCandidates);

@@ -25,19 +25,45 @@ console.log('Firebase app initialized:', app);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+// Google認証の設定を追加
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 export const db = getFirestore(app);
 
 // Connect to emulators if in development mode
-const useEmulator = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
+const useFirestoreEmulator = import.meta.env.VITE_USE_FIRESTORE_EMULATOR === 'true';
+const useAuthEmulator = import.meta.env.VITE_USE_AUTH_EMULATOR === 'true';
 let emulatorsConnected = false;
 
-if (useEmulator && !emulatorsConnected) {
-  console.log('Using Firebase Emulators');
+console.log('Environment variables:', {
+  VITE_USE_FIRESTORE_EMULATOR: import.meta.env.VITE_USE_FIRESTORE_EMULATOR,
+  VITE_USE_AUTH_EMULATOR: import.meta.env.VITE_USE_AUTH_EMULATOR,
+  useFirestoreEmulator: useFirestoreEmulator,
+  useAuthEmulator: useAuthEmulator
+});
+
+if ((useFirestoreEmulator || useAuthEmulator) && !emulatorsConnected) {
+  console.log('Connecting to Firebase Emulators...');
   try {
-    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    if (useAuthEmulator) {
+      console.log('Connecting to Auth Emulator...');
+      connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    } else {
+      console.log('Using production Firebase Auth - Real Google Authentication enabled');
+    }
+    
+    if (useFirestoreEmulator) {
+      console.log('Connecting to Firestore Emulator...');
+      connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    } else {
+      console.log('Using production Firestore');
+    }
+    
     emulatorsConnected = true;
-    console.log('Connected to Firebase Emulators');
+    console.log('Emulator connections completed');
   } catch (error: any) {
     if (error?.message?.includes('already') || error?.code === 'auth/emulator-config-failed') {
       console.log('Emulators already connected or connection failed (likely already connected)');
@@ -46,8 +72,8 @@ if (useEmulator && !emulatorsConnected) {
       console.warn('Failed to connect to emulators:', error);
     }
   }
-} else if (!useEmulator) {
-  console.log('Using production Firebase');
+} else {
+  console.log('Using production Firebase services');
 }
 
 console.log('Firestore instance created:', db);

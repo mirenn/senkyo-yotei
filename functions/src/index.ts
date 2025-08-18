@@ -1,90 +1,119 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
 
 initializeApp();
+console.log('Firebase Admin SDK initialized nagaitestaaaaaaaaaaaaaaaaaaaaaaaaa');
 
-// Vote aggregation function
-// This function triggers whenever a vote document is updated
+// Vote aggregation function (incremental)
+// 投票ドキュメントの変更差分だけを使って逐次加算 / 減算する
 export const aggregateVotes = onDocumentWritten(
   "votes/{userId}",
   async (event) => {
     const db = getFirestore();
-    
-    if (!event.data) {
-      console.log("No data associated with the event");
+    if (!event.data) return;
+
+    const beforeVotes = event.data.before?.data();
+    const afterVotes = event.data.after?.data();
+    console.log('Before Votes:', beforeVotes);
+    console.log('After Votes:', afterVotes);
+
+    const beforeElections = beforeVotes?.elections || {};
+    const afterElections = afterVotes?.elections || {};
+
+    // 変更のあった electionId だけ抽出（candidateId が変わらないものは除外）
+    const affected: Array<{
+      electionId: string;
+      beforeCandidate?: string;
+      afterCandidate?: string;
+    }> = [];
+
+    const electionIds = new Set<string>([
+      ...Object.keys(beforeElections),
+      ...Object.keys(afterElections),
+    ]);
+
+    electionIds.forEach((id) => {
+      const b = beforeElections[id]?.candidateId;
+      const a = afterElections[id]?.candidateId;
+      if (b !== a) {
+        affected.push({electionId: id, beforeCandidate: b, afterCandidate: a});
+      }
+    });
+
+    if (affected.length === 0) {
+      console.log('[aggregateVotes] 差分なし');
       return;
     }
 
-    const beforeData = event.data.before?.data();
-    const afterData = event.data.after?.data();
+    console.log('[aggregateVotes] 差分更新開始', affected);
 
-    // Get all elections that were affected
-    const electionsToUpdate = new Set<string>();
-    
-    // Check for changes in elections
-    if (beforeData?.elections) {
-      Object.keys(beforeData.elections).forEach((electionId) => {
-        electionsToUpdate.add(electionId);
-      });
-    }
-    
-    if (afterData?.elections) {
-      Object.keys(afterData.elections).forEach((electionId) => {
-        electionsToUpdate.add(electionId);
-      });
-    }
-
-    // Update aggregation for each affected election
-    for (const electionId of electionsToUpdate) {
+    for (const change of affected) {
+      const {electionId, beforeCandidate, afterCandidate} = change;
       try {
-        await updateElectionResults(db, electionId);
-        console.log(`Updated results for election: ${electionId}`);
-      } catch (error) {
-        console.error(`Error updating results for election ${electionId}:`, error);
+        await db.runTransaction(async (tx: any) => {
+          const ref = db.collection('electionResults').doc(electionId);
+            const snap = await tx.get(ref);
+          const data = snap.exists ? snap.data() : {
+            electionId,
+            totalVotes: 0,
+            candidates: {}, // { candidateId: { count, percentage } }
+          };
+
+          // counts をベースに更新後に percentage 再計算
+          const candidatesCounts: Record<string, number> = Object.fromEntries(
+            Object.entries(data.candidates || {}).map(([cid, v]: any) => [cid, v.count])
+          );
+          let totalVotes: number = data.totalVotes || 0;
+
+          if (beforeCandidate && beforeCandidate !== afterCandidate) {
+            // 別候補へ変更 or 削除
+            if (candidatesCounts[beforeCandidate]) {
+              candidatesCounts[beforeCandidate] -= 1;
+              if (candidatesCounts[beforeCandidate] <= 0) delete candidatesCounts[beforeCandidate];
+            }
+            if (!afterCandidate) {
+              // 削除（投票取り消し）
+              totalVotes -= 1;
+            }
+          }
+          if (!beforeCandidate && afterCandidate) {
+            // 新規投票
+            totalVotes += 1;
+          }
+          if (beforeCandidate && afterCandidate && beforeCandidate !== afterCandidate) {
+            // 変更 (totalVotes 変わらない)
+          }
+          if (afterCandidate && beforeCandidate !== afterCandidate) {
+            candidatesCounts[afterCandidate] = (candidatesCounts[afterCandidate] || 0) + 1;
+          }
+
+          // totalVotes が負にならない安全策
+          if (totalVotes < 0) totalVotes = 0;
+
+          // percentage 再計算
+          const candidates: Record<string, {count: number; percentage: number}> = {};
+          Object.entries(candidatesCounts).forEach(([cid, count]) => {
+            candidates[cid] = {
+              count,
+              percentage: totalVotes > 0 ? Math.round((count / totalVotes) * 1000) / 10 : 0,
+            };
+          });
+
+          tx.set(ref, {
+            electionId,
+            totalVotes,
+            candidates,
+            lastUpdated: FieldValue.serverTimestamp(),
+          });
+        });
+        console.log(`[aggregateVotes] 更新完了 election=${electionId}`);
+      } catch (e) {
+        console.error(`[aggregateVotes] 更新失敗 election=${electionId}`, e);
       }
     }
   }
 );
-
-// Helper function to recalculate election results
-async function updateElectionResults(db: any, electionId: string) {
-  // Get all votes for this election
-  const votesSnapshot = await db.collection("votes").get();
-  
-  const candidateCounts: {[candidateId: string]: number} = {};
-  let totalVotes = 0;
-
-  // Count votes for each candidate
-  votesSnapshot.forEach((doc: any) => {
-    const voteData = doc.data();
-    if (voteData.elections && voteData.elections[electionId]) {
-      const candidateId = voteData.elections[electionId].candidateId;
-      candidateCounts[candidateId] = (candidateCounts[candidateId] || 0) + 1;
-      totalVotes++;
-    }
-  });
-
-  // Calculate percentages
-  const candidates: {[candidateId: string]: {count: number; percentage: number}} = {};
-  
-  Object.entries(candidateCounts).forEach(([candidateId, count]) => {
-    candidates[candidateId] = {
-      count: count,
-      percentage: totalVotes > 0 ? Math.round((count / totalVotes) * 1000) / 10 : 0,
-    };
-  });
-
-  // Update the results document
-  const resultRef = db.collection("electionResults").doc(electionId);
-  
-  await resultRef.set({
-    electionId,
-    totalVotes,
-    candidates,
-    lastUpdated: new Date(),
-  });
-}
 
 // User profile creation function
 export const createUserProfile = onDocumentWritten(

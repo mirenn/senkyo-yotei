@@ -10,7 +10,8 @@ import {
   query, 
   orderBy, 
   Timestamp,
-  writeBatch
+  writeBatch,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from './config';
 import { type Election, type Candidate, type User, type Vote, type ElectionResult } from '../types';
@@ -220,46 +221,58 @@ export const userService = {
 export const voteService = {
   // Submit or update vote
   async submitVote(uid: string, electionId: string, candidateId: string): Promise<void> {
-    // Use raw UID instead of hashed ID for easier rule matching
     const voteRef = doc(db, 'votes', uid);
-    
-    const voteData = {
-      [`elections.${electionId}`]: {
-        candidateId,
-        createdAt: dateToTimestamp(new Date()),
-        updatedAt: dateToTimestamp(new Date()),
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(voteRef);
+      const now = new Date();
+      let elections: Record<string, any> = {};
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && typeof data.elections === 'object') {
+          elections = { ...data.elections }; // clone
+        }
       }
-    };
-    
-    await setDoc(voteRef, voteData, { merge: true });
-    
-    // Update election results cache (manual aggregation for development)
+      const prev = elections[electionId];
+      elections[electionId] = {
+        candidateId,
+        createdAt: prev?.createdAt ?? dateToTimestamp(now),
+        updatedAt: dateToTimestamp(now),
+      };
+      // 仕様どおりの形を保証: { elections: { <electionId>: {...} } }
+      tx.set(voteRef, { elections });
+    });
+
     try {
       const updatedResults = await resultsService.manualAggregateVotes(electionId, uid);
-      console.log('Updated election results after vote:', updatedResults);
+      console.log('[submitVote] Updated election results after vote:', updatedResults);
     } catch (error) {
-      console.log('Error updating election results cache:', error);
+      console.log('[submitVote] Error updating election results cache:', error);
     }
   },
 
   // Cancel vote
   async cancelVote(uid: string, electionId: string): Promise<void> {
-    // Use raw UID instead of hashed ID for easier rule matching
     const voteRef = doc(db, 'votes', uid);
-    
-    const voteData = {
-      [`elections.${electionId}`]: null
-    };
-    
-    await setDoc(voteRef, voteData, { merge: true });
-    
-    // Update election results cache (manual aggregation for development)
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(voteRef);
+      if (!snap.exists()) return; // 何もしない
+      const data = snap.data();
+      let elections: Record<string, any> = {};
+      if (data && typeof data.elections === 'object') {
+        elections = { ...data.elections };
+      }
+      if (elections[electionId]) {
+        delete elections[electionId];
+      }
+      // 空でも明示的に elections: {} を保持し仕様形維持
+      tx.set(voteRef, { elections });
+    });
+
     try {
-      // For vote cancellation, we'll just refresh the results from cache
       const currentResults = await resultsService.getElectionResults(electionId);
-      console.log('Refreshed election results after vote cancellation:', currentResults);
+      console.log('[cancelVote] Refreshed election results after vote cancellation:', currentResults);
     } catch (error) {
-      console.log('Error refreshing election results cache:', error);
+      console.log('[cancelVote] Error refreshing election results cache:', error);
     }
   },
 
@@ -299,27 +312,50 @@ export const voteService = {
 export const resultsService = {
   // Get election results with fallback to cached or mock data
   async getElectionResults(electionId: string): Promise<ElectionResult | null> {
+    console.log('🔍 [getElectionResults] Starting to fetch results for electionId:', electionId);
     try {
       // First try to get pre-calculated results
       const resultRef = doc(db, 'electionResults', electionId);
+      console.log('📖 [getElectionResults] Reading from electionResults collection, docId:', electionId);
       const resultSnap = await getDoc(resultRef);
       
       if (resultSnap.exists()) {
+        console.log('✅ [getElectionResults] Found cached results in Firestore');
         const data = resultSnap.data();
-        return {
+        const cachedResults = {
           electionId,
           ...data,
           lastUpdated: timestampToDate(data.lastUpdated),
         } as ElectionResult;
+        
+        // Check if cached results are recent (within 1 minute)
+        const now = new Date();
+        const timeDiff = now.getTime() - cachedResults.lastUpdated.getTime();
+        console.log('⏰ [getElectionResults] Cached results age:', timeDiff / 1000, 'seconds');
+        if (timeDiff < 60000) { // 1 minute
+          console.log('🎯 [getElectionResults] Using cached results (fresh within 1 minute)');
+          return cachedResults;
+        }
+        console.log('⏳ [getElectionResults] Cached results too old, will perform manual aggregation');
+      } else {
+        console.log('❌ [getElectionResults] No cached results found in Firestore');
       }
 
-      // If no pre-calculated results exist, return mock data for development
-      console.log('No pre-calculated results found, using mock data for development...');
-      return this.getMockElectionResults(electionId);
+      // If no recent cached results exist, perform manual aggregation
+      console.log('🔄 [getElectionResults] No recent cached results found, performing manual aggregation...');
+      const aggregatedResults = await this.manualAggregateVotes(electionId);
+      console.log('📊 [getElectionResults] Manual aggregation complete:', aggregatedResults);
+      return aggregatedResults;
     } catch (error) {
-      console.error('Error fetching election results:', error);
-      // Fallback to mock data
-      return this.getMockElectionResults(electionId);
+      console.error('❌ [getElectionResults] Error fetching election results:', error);
+      console.log('🆘 [getElectionResults] Falling back to empty results');
+      // Fallback to empty results
+      return {
+        electionId,
+        totalVotes: 0,
+        candidates: {},
+        lastUpdated: new Date()
+      };
     }
   },
 
@@ -365,63 +401,105 @@ export const resultsService = {
   },
 
   // Manual aggregation function for development (when Cloud Functions are not available)
-  async manualAggregateVotes(electionId: string, userId: string): Promise<ElectionResult | null> {
+  // ⚠️ SECURITY WARNING: This is a temporary workaround - MUST BE REPLACED WITH CLOUD FUNCTIONS
+  async manualAggregateVotes(electionId: string, userId?: string): Promise<ElectionResult | null> {
     try {
-      console.log('手動集計を開始:', { electionId, userId });
+      console.log('🔧 [manualAggregateVotes] Starting manual aggregation:', { electionId, userId });
       
-      // Get all votes documents to properly aggregate
-      // Note: This requires reading all votes, which may hit security rules in production
-      // For development, we'll use a simplified approach
+      // ⚠️ TEMPORARY WORKAROUND: Since we can't read all votes due to security rules,
+      // we'll create a simplified aggregation based on available data
       
-      // Get current user's vote to understand the change
-      const userVote = await voteService.getUserVotes(userId);
-      const newCandidateId = userVote?.elections[electionId]?.candidateId;
+      // Get candidates for this election
+      console.log('👥 [manualAggregateVotes] Fetching candidates...');
+      const candidates = await candidateService.getCandidates(electionId);
+      console.log('👥 [manualAggregateVotes] Found candidates:', candidates.length, candidates.map(c => ({ id: c.id, name: c.name })));
       
-      console.log('ユーザーの投票状況:', { newCandidateId });
-      
-      // For demo purposes, we'll create realistic results that reflect the vote
-      let results = this.getMockElectionResults(electionId);
-      
-      if (newCandidateId) {
-        // Ensure the voted candidate has at least 1 vote
-        if (results.candidates[newCandidateId]) {
-          results.candidates[newCandidateId].count += 10; // Add some votes for demo
-          results.totalVotes += 10;
-          
-          // Recalculate percentages
-          Object.keys(results.candidates).forEach(candidateId => {
-            const candidate = results.candidates[candidateId];
-            candidate.percentage = Math.round((candidate.count / results.totalVotes) * 1000) / 10;
-          });
-          
-          results.lastUpdated = new Date();
-          
-          console.log('集計結果を更新:', results);
-          
-          // Save updated results to Firestore
-          await this.saveElectionResults(results);
+      // Check if user has voted (if userId provided)
+      let userVotedCandidateId: string | null = null;
+      if (userId) {
+        try {
+          console.log('🗳️ [manualAggregateVotes] Checking user vote for userId:', userId);
+          const userVote = await voteService.getUserVotes(userId);
+          userVotedCandidateId = userVote?.elections[electionId]?.candidateId || null;
+          console.log('🗳️ [manualAggregateVotes] User voted for candidateId:', userVotedCandidateId);
+        } catch (error) {
+          console.log('⚠️ [manualAggregateVotes] Could not get user vote:', error);
         }
       }
       
-      return results;
+      // Create results structure - we can't get real aggregation without Cloud Functions
+      const results: {[candidateId: string]: {count: number; percentage: number}} = {};
+      let totalVotes = 0;
+      
+      candidates.forEach(candidate => {
+        // For now, show 1 vote for the candidate the user voted for, 0 for others
+        const count = candidate.id === userVotedCandidateId ? 1 : 0;
+        results[candidate.id] = {
+          count,
+          percentage: 0 // Will calculate after totalVotes is determined
+        };
+        totalVotes += count;
+      });
+      
+      // Calculate percentages
+      candidates.forEach(candidate => {
+        if (totalVotes > 0) {
+          results[candidate.id].percentage = Math.round((results[candidate.id].count / totalVotes) * 1000) / 10;
+        }
+      });
+      
+      const finalResults: ElectionResult = {
+        electionId,
+        totalVotes,
+        candidates: results,
+        lastUpdated: new Date()
+      };
+      
+      console.log('📊 [manualAggregateVotes] Manual aggregation results (user votes only):', finalResults);
+      
+      // Save results to Firestore
+      console.log('💾 [manualAggregateVotes] Saving results to Firestore...');
+      await this.saveElectionResults(finalResults);
+      console.log('✅ [manualAggregateVotes] Results saved successfully');
+      
+      return finalResults;
     } catch (error) {
-      console.error('手動集計でエラー:', error);
-      return this.getMockElectionResults(electionId);
+      console.error('❌ [manualAggregateVotes] Error in manual aggregation:', error);
+      // Return empty results
+      console.log('🆘 [manualAggregateVotes] Falling back to empty results');
+      const candidates = await candidateService.getCandidates(electionId).catch(() => []);
+      const results: {[candidateId: string]: {count: number; percentage: number}} = {};
+      
+      candidates.forEach(candidate => {
+        results[candidate.id] = { count: 0, percentage: 0 };
+      });
+      
+      const emptyResults = {
+        electionId,
+        totalVotes: 0,
+        candidates: results,
+        lastUpdated: new Date()
+      };
+      
+      console.log('🆘 [manualAggregateVotes] Empty results created:', emptyResults);
+      return emptyResults;
     }
   },
 
   // Save calculated results to Firestore (optional caching)
   async saveElectionResults(result: ElectionResult): Promise<void> {
     try {
+      console.log('💾 [saveElectionResults] Saving to electionResults collection, docId:', result.electionId);
       const resultRef = doc(db, 'electionResults', result.electionId);
       const dataToSave = {
         ...result,
         lastUpdated: dateToTimestamp(result.lastUpdated),
       };
+      console.log('💾 [saveElectionResults] Data to save:', dataToSave);
       await setDoc(resultRef, dataToSave);
-      console.log('Saved election results to Firestore:', result);
+      console.log('✅ [saveElectionResults] Successfully saved election results to Firestore:', result);
     } catch (error) {
-      console.error('Error saving election results:', error);
+      console.error('❌ [saveElectionResults] Error saving election results:', error);
     }
   },
 };

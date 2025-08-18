@@ -117,13 +117,31 @@ npm run dev
 
 ### Environment Variables
 
-Create a `.env` file in the frontend directory (optional):
+Create a `.env.local` file in the frontend directory to configure Firebase:
 ```bash
+# Firebase Configuration - Use your actual Firebase project settings
 VITE_FIREBASE_API_KEY=your-api-key
-VITE_FIREBASE_AUTH_DOMAIN=your-auth-domain
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your-project-id
-# ... other Firebase config values
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+
+# Emulator Settings (granular control)
+# Auth Emulator - Set to false for real Google authentication
+VITE_USE_AUTH_EMULATOR=false
+# Firestore Emulator - Set to true for local development
+VITE_USE_FIRESTORE_EMULATOR=true
+
+# Legacy environment variable (for backwards compatibility)
+VITE_USE_FIREBASE_EMULATOR=false
 ```
+
+**Development Configuration**:
+- `VITE_USE_AUTH_EMULATOR=false`: Uses real Google accounts for authentication
+- `VITE_USE_FIRESTORE_EMULATOR=true`: Uses local Firestore emulator for data storage
+
+This setup allows you to test with actual Google authentication while keeping your data local during development.
 
 ### Firebase Security Rules
 
