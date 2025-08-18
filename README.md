@@ -1,194 +1,83 @@
-# Election Voting Prediction Platform
+<div align="center">
 
-選挙における投票予定先を事前登録できるリアルタイム投票予想プラットフォーム
+# 選挙 投票予定登録 / 予測プラットフォーム
 
-## Features
+市民が「どの候補へ投票する予定か」を事前登録し、集計結果をリアルタイムに可視化するプロジェクトです。早期に“空気”を数値化し、健全な議論促進を目指します。
 
-- リアルタイム得票予想の可視化
-- 選挙・候補者情報の動的登録（一般ユーザー対応）
-- Google OAuth による安全な認証
-- 重複投票防止機能
-- 投票予定の自由な変更・取り消し
+重要: 投票はユーザー認証下で 1 人 1 票として厳格に管理しますが、一般公開される集計から個々のユーザーが「誰に投票したか / 不支持を付けたか」が特定されることはありません。ユーザー ID と投票予定の関連は内部整合性 (重複防止・改ざん検出) のみに使用し、公開ビューは集計値のみを提供します。
 
-## Tech Stack
+</div>
 
-- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS
-- **Backend**: Firebase Functions + Node.js + TypeScript
-- **Database**: Firestore
-- **Authentication**: Firebase Auth (Google OAuth)
-- **Hosting**: Firebase Hosting
+## 目次
+1. コンセプト / ゴール
+2. 主な機能 (ユーザー視点)
+3. プライバシーと設計思想
+4. 詳細設計 / 開発ガイドへの導線
+5. 推奨スクリーンショット一覧
+6. 今後のロードマップ / 拡張案
+7. ライセンス / コントリビューション
 
-## Project Structure
+---
 
-```
-├── architecture.md          # System architecture documentation
-├── memory.md                # Implementation progress tracking
-├── firebase.json            # Firebase project configuration
-├── firestore.rules          # Firestore security rules
-├── firestore.indexes.json   # Firestore database indexes
-├── frontend/                # React frontend application
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── contexts/        # React contexts (Auth, etc.)
-│   │   ├── firebase/        # Firebase configuration and services
-│   │   ├── pages/           # Page components
-│   │   └── types/           # TypeScript type definitions
-│   └── package.json
-└── functions/               # Firebase Cloud Functions
-    ├── src/
-    └── package.json
-```
+## 1. コンセプト / ゴール
+従来の選挙は「投票箱が開くまで分からない」構造でした。本サービスは“投票予定”をユーザー認証下で一意管理し、重複/改ざん防止を行いながら【公開側は統計的集計のみ】を提示します。これにより透明性と早期議論活性化を両立しつつ、個人の選好秘匿性を保持します。
 
-## Setup Instructions
+## 2. 主な機能 (ユーザー視点)
+- 選挙一覧・詳細閲覧 (未ログインでも可能)
+- Google アカウントでログイン (Firebase Auth / OAuth)
+- 選挙の新規作成（ログインユーザー）
+- 候補者の複数登録
+- 投票予定の登録 / 変更 / 取り消し (常に 1 票 / 1 選挙)
+- 「この候補には投票したくない」不支持マーク機能（実装済）
+   - 本機能は本プロジェクトの白眉。従来の公開選挙結果では見えにくかった「強い拒否感」の分布を可視化し、単純得票率だけでは読み取れない構造的支持/不支持のギャップを早期に把握できると考えています。
+- リアルタイム更新（Firestore リスナー）
+ - 公開インスタンス: https://senkyo-yotei.web.app/
 
-### Prerequisites
+## 3. プライバシーと設計思想
+公開されるのは「候補ごとの集計値 (得票数 / 得票率 / 不支持数 / 不支持率 など)」のみです。個別ユーザーの選択は第三者から逆引きできません。内部的には 1 人 1 票制御と整合性検証のためユーザー単位レコードを保持します。実装上のデータモデル・セキュリティルール・集計ロジックの詳細は `architecture.md` をご覧ください。
 
-- Node.js 18+
-- Firebase CLI (`npm install -g firebase-tools`)
-- Firebase project (create at https://console.firebase.google.com)
+## 4. 詳細設計 / 開発ガイドへの導線
+技術スタック / データモデル / セキュリティルール / 集計アルゴリズム / 不支持マーク実装上の排他制御 などの詳細は `architecture.md` に集約しました。本 README では利用者・評価者向けの概要を中心に記載しています。
 
-### 1. Firebase Project Setup
+## 5. 推奨スクリーンショット一覧 (ご提供いただけると README を更に改善できます)
+| ファイル名案 | 内容 | 撮影ポイント / 注記 |
+|--------------|------|---------------------|
+| screenshot-home.png | 選挙一覧トップ | 未ログイン状態 |
+| screenshot-login.png | Google ログインダイアログ | ポップアップ (実アカウント伏せても可) |
+| screenshot-create-election.png | 選挙作成フォーム | バリデーション表示例があれば尚良し |
+| screenshot-election-detail.png | 選挙詳細 & 候補一覧 | 投票前状態 |
+| screenshot-voted.png | 投票完了状態 | 選択済候補のハイライト |
+| screenshot-realtime-update.png | リアルタイム集計 | 複数タブ操作で増加が反映される様子 (可能なら GIF) |
+| screenshot-dislike-feature.png | 不支持マーク UI | 実装後 / 未実装ならワイヤ案でも可 |
 
-1. Create a new Firebase project at https://console.firebase.google.com
-2. Enable Authentication (Google provider)
-3. Create a Firestore database
-4. Get your Firebase config from Project Settings
+※ 画像は `frontend/public/images/` 配下などに保存し、README から相対パス参照予定。
 
-### 2. Local Development Setup
+### 現在提供済みスクリーンショット (サムネイル表示)
 
-1. Clone and setup the project:
-   ```bash
-   cd frontend
-   npm install
-   ```
+| 画面 | 画像 | 備考 |
+|------|------|------|
+| ホーム (一覧) | <img src="frontend/public/images/screenshot-home.png" alt="選挙一覧ホーム" width="320" /> | 未ログイン例 |
+| ログインダイアログ | <img src="frontend/public/images/screenshot-login.png" alt="Google ログイン" width="320" /> | ポップアップ表示 |
+| 選挙作成フォーム | <img src="frontend/public/images/screenshot-create-election.png" alt="選挙作成フォーム" width="320" /> | バリデーション例歓迎 |
 
-2. Configure Firebase:
-   ```bash
-   # Login to Firebase
-   firebase login
-   
-   # Initialize Firebase project (if not already done)
-   firebase init
-   ```
+他のスクリーンショット (detail / voted / realtime / dislike など) もご提供いただければ順次ここへ追加します。
 
-3. Update Firebase configuration:
-   - Edit `frontend/src/firebase/config.ts`
-   - Replace placeholder values with your Firebase project config
+## 6. 今後のロードマップ / 拡張案
+- 不支持マーク集計の可視化強化（時系列推移 / 相関分析）
+- 集計 Cloud Function のトランザクション / 冪等性強化
+- App Check 導入 / レートリミット追加
+- 監査ログコレクション (`/auditLogs`) による操作履歴保全
+- 選挙ステータス (予定 / 進行中 / 終了) の自動更新
+- アクセシビリティ改善 (キーボード操作 / ARIA)
+- i18n (日本語 / 英語切替)
 
-### 3. Development Mode
+## 7. ライセンス
+本プロジェクトは Apache License 2.0 の下で提供されます。`LICENSE` ファイルを参照してください。
+メモ：変更するかもしれません。
 
-#### Frontend Only (with Mock Data)
-```bash
-cd frontend
-npm run dev
-```
-The app will run with mock data if Firebase is not configured.
+---
+ご不明点・改善提案は Issue へお気軽にどうぞ。スクリーンショットのご提供もお待ちしています！
 
-#### Full Stack Development
-```bash
-# Terminal 1: Start Firebase emulators
-firebase emulators:start
+---
+Copyright (c) 2025
 
-# Terminal 2: Start frontend development server
-cd frontend
-npm run dev
-```
-
-### 4. Production Deployment
-
-1. Build the frontend:
-   ```bash
-   cd frontend
-   npm run build
-   ```
-
-2. Deploy to Firebase:
-   ```bash
-   # Deploy everything
-   firebase deploy
-
-   # Or deploy specific services
-   firebase deploy --only hosting
-   firebase deploy --only firestore:rules
-   firebase deploy --only functions
-   ```
-
-## Configuration
-
-### Environment Variables
-
-Create a `.env.local` file in the frontend directory to configure Firebase:
-```bash
-# Firebase Configuration - Use your actual Firebase project settings
-VITE_FIREBASE_API_KEY=your-api-key
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
-VITE_FIREBASE_APP_ID=your-app-id
-
-# Emulator Settings (granular control)
-# Auth Emulator - Set to false for real Google authentication
-VITE_USE_AUTH_EMULATOR=false
-# Firestore Emulator - Set to true for local development
-VITE_USE_FIRESTORE_EMULATOR=true
-
-# Legacy environment variable (for backwards compatibility)
-VITE_USE_FIREBASE_EMULATOR=false
-```
-
-**Development Configuration**:
-- `VITE_USE_AUTH_EMULATOR=false`: Uses real Google accounts for authentication
-- `VITE_USE_FIRESTORE_EMULATOR=true`: Uses local Firestore emulator for data storage
-
-This setup allows you to test with actual Google authentication while keeping your data local during development.
-
-### Firebase Security Rules
-
-The project includes Firestore security rules in `firestore.rules`. Deploy them with:
-```bash
-firebase deploy --only firestore:rules
-```
-
-### Cloud Functions
-
-The project includes Cloud Functions for:
-- Vote aggregation and real-time results
-- User profile management
-- Data cleanup
-
-Deploy functions with:
-```bash
-cd functions
-npm install
-npm run build
-cd ..
-firebase deploy --only functions
-```
-
-## Usage
-
-1. **View Elections**: Browse available elections without authentication
-2. **Create Elections**: Login with Google to create new elections
-3. **Vote**: Login and vote for your preferred candidate
-4. **Real-time Results**: See live vote counts and percentages
-5. **Manage Votes**: Change or cancel your vote at any time
-
-## Demo Mode
-
-The application gracefully falls back to mock data when Firebase is not available, making it perfect for:
-- Local development without Firebase setup
-- Demonstrations and presentations
-- Testing UI components
-
-## Architecture
-
-See `architecture.md` for detailed system architecture, data models, and API design.
-
-## Implementation Progress
-
-See `memory.md` for current implementation status and next steps.
-
-## License
-
-This project is open source and available under the MIT License.
