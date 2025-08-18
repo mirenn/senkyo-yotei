@@ -86,18 +86,32 @@
       candidateId: string
       createdAt: Timestamp
       updatedAt: Timestamp
+  // 新機能: ユーザーが「この候補者には投票したくない」とマークした候補者ID配列（複数可）
+  dislikedCandidates?: string[]
     }
   }
 }
+
+### 投票と不支持マークの排他仕様
+- 同一選挙において「投票した候補」と「不支持マーク」を同じ candidateId に同時付与することは不可。
+- 投票実行時: その candidateId が `dislikedCandidates` に含まれていれば自動的に除去。
+- 不支持トグル時: その candidateId が現在 `candidateId`（投票済）なら無視（UIは disabled）。
+- これにより同一コレクション（`votes` ドキュメント）内で状態整合性を保つ。
 
 // Real-time aggregation collection
 /electionResults/{electionId}
 {
   totalVotes: number
+  // 新機能: 全候補に付与された不支持マーク総数
+  totalDislikeMarks?: number
   candidates: {
     [candidateId]: {
       count: number
       percentage: number
+      // 不支持マーク数
+      dislikeCount?: number
+      // 全不支持マークに占める割合
+      dislikePercentage?: number
     }
   }
   lastUpdated: Timestamp

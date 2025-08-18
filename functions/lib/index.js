@@ -26,11 +26,16 @@ exports.aggregateVotes = (0, firestore_1.onDocumentWritten)("votes/{userId}", as
         ...Object.keys(afterElections),
     ]);
     electionIds.forEach((id) => {
-        var _a, _b;
+        var _a, _b, _c, _d;
         const b = (_a = beforeElections[id]) === null || _a === void 0 ? void 0 : _a.candidateId;
         const a = (_b = afterElections[id]) === null || _b === void 0 ? void 0 : _b.candidateId;
-        if (b !== a) {
-            affected.push({ electionId: id, beforeCandidate: b, afterCandidate: a });
+        const beforeDislikes = Array.isArray((_c = beforeElections[id]) === null || _c === void 0 ? void 0 : _c.dislikedCandidates) ? beforeElections[id].dislikedCandidates : [];
+        const afterDislikes = Array.isArray((_d = afterElections[id]) === null || _d === void 0 ? void 0 : _d.dislikedCandidates) ? afterElections[id].dislikedCandidates : [];
+        // 票 or 不支持差分がある場合のみ対象
+        const voteChanged = b !== a;
+        const dislikeChanged = beforeDislikes.length !== afterDislikes.length || beforeDislikes.some(d => !afterDislikes.includes(d)) || afterDislikes.some(d => !beforeDislikes.includes(d));
+        if (voteChanged || dislikeChanged) {
+            affected.push({ electionId: id, beforeCandidate: b, afterCandidate: a, beforeDislikes, afterDislikes });
         }
     });
     if (affected.length === 0) {
@@ -39,7 +44,7 @@ exports.aggregateVotes = (0, firestore_1.onDocumentWritten)("votes/{userId}", as
     }
     console.log('[aggregateVotes] 差分更新開始', affected);
     for (const change of affected) {
-        const { electionId, beforeCandidate, afterCandidate } = change;
+        const { electionId, beforeCandidate, afterCandidate, beforeDislikes, afterDislikes } = change;
         try {
             await db.runTransaction(async (tx) => {
                 const ref = db.collection('electionResults').doc(electionId);
@@ -47,11 +52,14 @@ exports.aggregateVotes = (0, firestore_1.onDocumentWritten)("votes/{userId}", as
                 const data = snap.exists ? snap.data() : {
                     electionId,
                     totalVotes: 0,
-                    candidates: {}, // { candidateId: { count, percentage } }
+                    totalDislikeMarks: 0,
+                    candidates: {}, // { candidateId: { count, percentage, dislikeCount, dislikePercentage } }
                 };
                 // counts をベースに更新後に percentage 再計算
                 const candidatesCounts = Object.fromEntries(Object.entries(data.candidates || {}).map(([cid, v]) => [cid, v.count]));
+                const candidateDislikeCounts = Object.fromEntries(Object.entries(data.candidates || {}).map(([cid, v]) => [cid, v.dislikeCount || 0]));
                 let totalVotes = data.totalVotes || 0;
+                let totalDislikeMarks = data.totalDislikeMarks || 0;
                 if (beforeCandidate && beforeCandidate !== afterCandidate) {
                     // 別候補へ変更 or 削除
                     if (candidatesCounts[beforeCandidate]) {
@@ -74,20 +82,64 @@ exports.aggregateVotes = (0, firestore_1.onDocumentWritten)("votes/{userId}", as
                 if (afterCandidate && beforeCandidate !== afterCandidate) {
                     candidatesCounts[afterCandidate] = (candidatesCounts[afterCandidate] || 0) + 1;
                 }
+                // 不支持差分計算
+                const removedDislikes = beforeDislikes.filter(d => !afterDislikes.includes(d));
+                const addedDislikes = afterDislikes.filter(d => !beforeDislikes.includes(d));
+                // 追加分
+                for (const cid of addedDislikes) {
+                    candidateDislikeCounts[cid] = (candidateDislikeCounts[cid] || 0) + 1;
+                    totalDislikeMarks += 1;
+                }
+                // 削除分
+                for (const cid of removedDislikes) {
+                    if (candidateDislikeCounts[cid]) {
+                        candidateDislikeCounts[cid] -= 1;
+                        if (candidateDislikeCounts[cid] <= 0)
+                            delete candidateDislikeCounts[cid];
+                        totalDislikeMarks -= 1;
+                    }
+                }
+                if (totalDislikeMarks < 0)
+                    totalDislikeMarks = 0;
                 // totalVotes が負にならない安全策
                 if (totalVotes < 0)
                     totalVotes = 0;
                 // percentage 再計算
+                const allCandidateIds = new Set([...Object.keys(candidatesCounts), ...Object.keys(candidateDislikeCounts)]);
+                // 全候補を取得し、未登場の候補も0で含める
+                try {
+                    const candidatesSnap = await db.collection('elections').doc(electionId).collection('candidates').get();
+                    candidatesSnap.docs.forEach(d => {
+                        if (!allCandidateIds.has(d.id)) {
+                            allCandidateIds.add(d.id);
+                            if (candidatesCounts[d.id] === undefined)
+                                candidatesCounts[d.id] = 0;
+                            if (candidateDislikeCounts[d.id] === undefined)
+                                candidateDislikeCounts[d.id] = 0;
+                        }
+                    });
+                }
+                catch (err) {
+                    console.error('[aggregateVotes] Failed to fetch candidates for zero-fill', err);
+                }
                 const candidates = {};
-                Object.entries(candidatesCounts).forEach(([cid, count]) => {
-                    candidates[cid] = {
+                allCandidateIds.forEach((cid) => {
+                    const count = candidatesCounts[cid] || 0;
+                    const dislikeCount = candidateDislikeCounts[cid] || 0;
+                    const entry = {
                         count,
                         percentage: totalVotes > 0 ? Math.round((count / totalVotes) * 1000) / 10 : 0,
                     };
+                    if (dislikeCount > 0) {
+                        entry.dislikeCount = dislikeCount;
+                        entry.dislikePercentage = totalDislikeMarks > 0 ? Math.round((dislikeCount / totalDislikeMarks) * 1000) / 10 : 0;
+                    }
+                    candidates[cid] = entry;
                 });
                 tx.set(ref, {
                     electionId,
                     totalVotes,
+                    totalDislikeMarks,
                     candidates,
                     lastUpdated: firestore_2.FieldValue.serverTimestamp(),
                 });

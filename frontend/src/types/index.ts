@@ -34,6 +34,8 @@ export interface Vote {
       candidateId: string;
       createdAt: Date;
       updatedAt: Date;
+    // ユーザーが「投票したくない」とマークした候補者ID一覧（複数可）
+    dislikedCandidates?: string[];
     };
   };
 }
@@ -41,10 +43,16 @@ export interface Vote {
 export interface ElectionResult {
   electionId: string;
   totalVotes: number;
+  // 不支持マーク総数（全候補合計）
+  totalDislikeMarks?: number;
   candidates: {
     [candidateId: string]: {
       count: number;
       percentage: number;
+    // 「投票したくない」マーク数
+    dislikeCount?: number;
+    // 全不支持マークに対する割合（totalDislikeMarks が存在する場合）
+    dislikePercentage?: number;
     };
   };
   lastUpdated: Date;

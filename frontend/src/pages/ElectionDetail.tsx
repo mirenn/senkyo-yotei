@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { electionService, candidateService, voteService, resultsService } from '../firebase/services';
+import { electionService, candidateService, voteService, resultsService, dislikeService } from '../firebase/services';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { type Election, type Candidate, type ElectionResult } from '../types';
 
 // ネットワークリクエストが大量発生していた default-avatar.png の無限 onError ループ対策:
@@ -17,6 +19,7 @@ const ElectionDetail = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [results, setResults] = useState<ElectionResult | null>(null);
   const [userVote, setUserVote] = useState<string | null>(null);
+  const [userDislikes, setUserDislikes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,8 +65,10 @@ const ElectionDetail = () => {
         const userVotes = await voteService.getUserVotes(state.user.uid);
         if (userVotes?.elections[id]) {
           setUserVote(userVotes.elections[id].candidateId);
+          setUserDislikes(userVotes.elections[id].dislikedCandidates || []);
         } else {
           setUserVote(null);
+          setUserDislikes([]);
         }
       }
     } catch (err) {
@@ -112,6 +117,7 @@ const ElectionDetail = () => {
               const userVotes = await voteService.getUserVotes(state.user.uid);
               if (userVotes?.elections[id]) {
                 setUserVote(userVotes.elections[id].candidateId);
+                setUserDislikes(userVotes.elections[id].dislikedCandidates || []);
               }
             }
           } else {
@@ -187,6 +193,7 @@ const ElectionDetail = () => {
           
           if (state.user) {
             setUserVote('candidate1'); // Mock user vote
+            setUserDislikes([]);
           }
         }
 
@@ -201,6 +208,23 @@ const ElectionDetail = () => {
     fetchElectionData();
   }, [id]); // state.userを依存配列から除去して不要な再実行を防ぐ
 
+  // electionResults のリアルタイム購読（初回生成含む）
+  useEffect(() => {
+    if (!id) return;
+    const ref = doc(db, 'electionResults', id);
+    const unsub = onSnapshot(ref, snap => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setResults({
+          electionId: id,
+          ...data,
+          lastUpdated: data.lastUpdated?.toDate ? data.lastUpdated.toDate() : new Date()
+        } as ElectionResult);
+      }
+    });
+    return () => unsub();
+  }, [id]);
+
   // ユーザーの投票状況だけを更新する別のuseEffect
   useEffect(() => {
     if (!id || !state.user) return;
@@ -210,8 +234,10 @@ const ElectionDetail = () => {
         const userVotes = await voteService.getUserVotes(state.user!.uid);
         if (userVotes?.elections[id]) {
           setUserVote(userVotes.elections[id].candidateId);
+          setUserDislikes(userVotes.elections[id].dislikedCandidates || []);
         } else {
           setUserVote(null);
+          setUserDislikes([]);
         }
       } catch (err) {
         console.log('Error fetching user vote:', err);
@@ -258,6 +284,21 @@ const ElectionDetail = () => {
     }
   };
 
+  const toggleDislike = async (candidateId: string) => {
+    if (!state.user || !election) {
+      alert('操作するにはログインが必要です');
+      return;
+    }
+    try {
+      await dislikeService.toggleDislike(state.user.uid, election.id, candidateId);
+      // ローカル更新
+      setUserDislikes(prev => prev.includes(candidateId) ? prev.filter(id => id !== candidateId) : [...prev, candidateId]);
+    } catch (e) {
+      console.log('Firestore not available, mock dislike toggle', e);
+      setUserDislikes(prev => prev.includes(candidateId) ? prev.filter(id => id !== candidateId) : [...prev, candidateId]);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-64">
@@ -297,9 +338,10 @@ const ElectionDetail = () => {
           </button>
         </div>
         <p className="text-gray-600 mb-4">{election.description}</p>
-        <div className="flex items-center space-x-4 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
           <span>投票期間: {election.startDate.toLocaleDateString()} - {election.endDate.toLocaleDateString()}</span>
           <span>総投票数: {results?.totalVotes || 0}票</span>
+          <span>不支持マーク総数: {results?.totalDislikeMarks ?? 0}</span>
           {election && (
             <span className={`px-2 py-1 rounded text-xs font-medium ${
               isVotingPeriod(election) 
@@ -325,6 +367,7 @@ const ElectionDetail = () => {
         {candidates.map((candidate) => {
           const candidateResult = results?.candidates[candidate.id];
           const isUserVote = userVote === candidate.id;
+          const isDisliked = userDislikes.includes(candidate.id);
           
           return (
             <div
@@ -352,7 +395,7 @@ const ElectionDetail = () => {
                   </div>
                 </div>
                 
-                <div className="text-right">
+                <div className="text-right space-y-2">
                   {/* 常に得票数を表示（投票期間中でも表示） */}
                   {candidateResult && shouldShowResults() && (
                     <div className="mb-3">
@@ -362,6 +405,11 @@ const ElectionDetail = () => {
                       <div className="text-lg text-gray-600">
                         ({candidateResult.percentage}%)
                       </div>
+                      {candidateResult.dislikeCount !== undefined && (
+                        <div className="text-sm text-red-600 mt-1">
+                          不支持 {candidateResult.dislikeCount}件{candidateResult.dislikePercentage !== undefined && ` (${candidateResult.dislikePercentage}%)`}
+                        </div>
+                      )}
                     </div>
                   )}
                   {(!candidateResult || !shouldShowResults()) && (
@@ -376,17 +424,29 @@ const ElectionDetail = () => {
                   )}
                   
                   {state.user ? (
-                    <button
-                      onClick={() => (isUserVote ? handleCancelVote() : handleVote(candidate.id))}
-                      className={`px-6 py-2 rounded-md font-medium transition-colors ${
-                        isUserVote
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                      }`}
-                      title={isUserVote ? 'クリックでこの投票を取り消します' : 'この候補者に投票します'}
-                    >
-                      {isUserVote ? '投票済み' : 'この候補者に投票'}
-                    </button>
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        onClick={() => (isUserVote ? handleCancelVote() : handleVote(candidate.id))}
+                        className={`px-6 py-2 rounded-md font-medium transition-colors ${
+                          isUserVote
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
+                        }`}
+                        title={isUserVote ? 'クリックでこの投票を取り消します' : 'この候補者に投票します'}
+                      >
+                        {isUserVote ? '投票済み' : 'この候補者に投票'}
+                      </button>
+                      <label className="flex items-center text-xs text-red-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isDisliked}
+                          onChange={() => toggleDislike(candidate.id)}
+                          disabled={isUserVote}
+                          className={`mr-1 h-4 w-4 text-red-600 border-gray-300 rounded focus:ring-red-500 ${isUserVote ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        />
+                        <span title={isUserVote ? '投票済み候補は不支持にできません' : ''}>この候補者には投票したくない</span>
+                      </label>
+                    </div>
                   ) : (
                     <p className="text-sm text-gray-500">投票するにはログインが必要です</p>
                   )}

@@ -233,21 +233,19 @@ export const voteService = {
         }
       }
       const prev = elections[electionId];
+      // 投票対象候補は不支持配列から除外
+      const cleanedDislikes = (prev?.dislikedCandidates || []).filter((id: string) => id !== candidateId);
       elections[electionId] = {
         candidateId,
         createdAt: prev?.createdAt ?? dateToTimestamp(now),
         updatedAt: dateToTimestamp(now),
+        // 投票済候補は不支持にできない仕様
+        dislikedCandidates: cleanedDislikes,
       };
       // 仕様どおりの形を保証: { elections: { <electionId>: {...} } }
       tx.set(voteRef, { elections });
     });
 
-    try {
-      const updatedResults = await resultsService.manualAggregateVotes(electionId, uid);
-      console.log('[submitVote] Updated election results after vote:', updatedResults);
-    } catch (error) {
-      console.log('[submitVote] Error updating election results cache:', error);
-    }
   },
 
   // Cancel vote
@@ -262,7 +260,17 @@ export const voteService = {
         elections = { ...data.elections };
       }
       if (elections[electionId]) {
-        delete elections[electionId];
+        // 投票は削除するが、不支持リストは維持したい場合は candidateId のみ削除し配列残す
+        const disliked = elections[electionId].dislikedCandidates || [];
+        if (disliked.length > 0) {
+          elections[electionId] = {
+            dislikedCandidates: disliked,
+            createdAt: elections[electionId].createdAt ?? dateToTimestamp(new Date()),
+            updatedAt: dateToTimestamp(new Date()),
+          };
+        } else {
+          delete elections[electionId];
+        }
       }
       // 空でも明示的に elections: {} を保持し仕様形維持
       tx.set(voteRef, { elections });
@@ -296,13 +304,14 @@ export const voteService = {
             candidateId: voteData.candidateId,
             createdAt: timestampToDate(voteData.createdAt),
             updatedAt: timestampToDate(voteData.updatedAt),
+            dislikedCandidates: Array.isArray(voteData.dislikedCandidates) ? voteData.dislikedCandidates : undefined,
           };
         }
       });
     }
-    
+
     return {
-      userId: uid, // Using raw UID for simplified management
+      userId: uid,
       elections,
     };
   },
@@ -327,25 +336,15 @@ export const resultsService = {
           ...data,
           lastUpdated: timestampToDate(data.lastUpdated),
         } as ElectionResult;
-        
-        // Check if cached results are recent (within 1 minute)
-        const now = new Date();
-        const timeDiff = now.getTime() - cachedResults.lastUpdated.getTime();
-        console.log('⏰ [getElectionResults] Cached results age:', timeDiff / 1000, 'seconds');
-        if (timeDiff < 60000) { // 1 minute
-          console.log('🎯 [getElectionResults] Using cached results (fresh within 1 minute)');
-          return cachedResults;
-        }
-        console.log('⏳ [getElectionResults] Cached results too old, will perform manual aggregation');
-      } else {
-        console.log('❌ [getElectionResults] No cached results found in Firestore');
+        return cachedResults;
       }
-
-      // If no recent cached results exist, perform manual aggregation
-      console.log('🔄 [getElectionResults] No recent cached results found, performing manual aggregation...');
-      const aggregatedResults = await this.manualAggregateVotes(electionId);
-      console.log('📊 [getElectionResults] Manual aggregation complete:', aggregatedResults);
-      return aggregatedResults;
+      console.log('❌ [getElectionResults] No cached results found in Firestore, returning empty structure');
+      return {
+        electionId,
+        totalVotes: 0,
+        candidates: {},
+        lastUpdated: new Date(),
+      };
     } catch (error) {
       console.error('❌ [getElectionResults] Error fetching election results:', error);
       console.log('🆘 [getElectionResults] Falling back to empty results');
@@ -400,106 +399,39 @@ export const resultsService = {
     };
   },
 
-  // Manual aggregation function for development (when Cloud Functions are not available)
-  // ⚠️ SECURITY WARNING: This is a temporary workaround - MUST BE REPLACED WITH CLOUD FUNCTIONS
-  async manualAggregateVotes(electionId: string, userId?: string): Promise<ElectionResult | null> {
-    try {
-      console.log('🔧 [manualAggregateVotes] Starting manual aggregation:', { electionId, userId });
-      
-      // ⚠️ TEMPORARY WORKAROUND: Since we can't read all votes due to security rules,
-      // we'll create a simplified aggregation based on available data
-      
-      // Get candidates for this election
-      console.log('👥 [manualAggregateVotes] Fetching candidates...');
-      const candidates = await candidateService.getCandidates(electionId);
-      console.log('👥 [manualAggregateVotes] Found candidates:', candidates.length, candidates.map(c => ({ id: c.id, name: c.name })));
-      
-      // Check if user has voted (if userId provided)
-      let userVotedCandidateId: string | null = null;
-      if (userId) {
-        try {
-          console.log('🗳️ [manualAggregateVotes] Checking user vote for userId:', userId);
-          const userVote = await voteService.getUserVotes(userId);
-          userVotedCandidateId = userVote?.elections[electionId]?.candidateId || null;
-          console.log('🗳️ [manualAggregateVotes] User voted for candidateId:', userVotedCandidateId);
-        } catch (error) {
-          console.log('⚠️ [manualAggregateVotes] Could not get user vote:', error);
+  // manualAggregateVotes および saveElectionResults は Cloud Functions 集計移行により削除
+};
+
+// 不支持候補操作用サービス (再追加)
+export const dislikeService = {
+  async toggleDislike(uid: string, electionId: string, candidateId: string): Promise<void> {
+    const voteRef = doc(db, 'votes', uid);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(voteRef);
+      let elections: Record<string, any> = {};
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && typeof data.elections === 'object') {
+          elections = { ...data.elections };
         }
       }
-      
-      // Create results structure - we can't get real aggregation without Cloud Functions
-      const results: {[candidateId: string]: {count: number; percentage: number}} = {};
-      let totalVotes = 0;
-      
-      candidates.forEach(candidate => {
-        // For now, show 1 vote for the candidate the user voted for, 0 for others
-        const count = candidate.id === userVotedCandidateId ? 1 : 0;
-        results[candidate.id] = {
-          count,
-          percentage: 0 // Will calculate after totalVotes is determined
-        };
-        totalVotes += count;
-      });
-      
-      // Calculate percentages
-      candidates.forEach(candidate => {
-        if (totalVotes > 0) {
-          results[candidate.id].percentage = Math.round((results[candidate.id].count / totalVotes) * 1000) / 10;
-        }
-      });
-      
-      const finalResults: ElectionResult = {
-        electionId,
-        totalVotes,
-        candidates: results,
-        lastUpdated: new Date()
+      const now = new Date();
+      const current = elections[electionId] || {
+        createdAt: dateToTimestamp(now),
       };
-      
-      console.log('📊 [manualAggregateVotes] Manual aggregation results (user votes only):', finalResults);
-      
-      // Save results to Firestore
-      console.log('💾 [manualAggregateVotes] Saving results to Firestore...');
-      await this.saveElectionResults(finalResults);
-      console.log('✅ [manualAggregateVotes] Results saved successfully');
-      
-      return finalResults;
-    } catch (error) {
-      console.error('❌ [manualAggregateVotes] Error in manual aggregation:', error);
-      // Return empty results
-      console.log('🆘 [manualAggregateVotes] Falling back to empty results');
-      const candidates = await candidateService.getCandidates(electionId).catch(() => []);
-      const results: {[candidateId: string]: {count: number; percentage: number}} = {};
-      
-      candidates.forEach(candidate => {
-        results[candidate.id] = { count: 0, percentage: 0 };
-      });
-      
-      const emptyResults = {
-        electionId,
-        totalVotes: 0,
-        candidates: results,
-        lastUpdated: new Date()
+      if (current.candidateId === candidateId) {
+        return; // 投票済み候補は不支持不可
+      }
+      const list: string[] = Array.isArray(current.dislikedCandidates) ? [...current.dislikedCandidates] : [];
+      const idx = list.indexOf(candidateId);
+      if (idx >= 0) list.splice(idx, 1); else list.push(candidateId);
+      elections[electionId] = {
+        ...current,
+        candidateId: current.candidateId,
+        dislikedCandidates: list,
+        updatedAt: dateToTimestamp(now),
       };
-      
-      console.log('🆘 [manualAggregateVotes] Empty results created:', emptyResults);
-      return emptyResults;
-    }
-  },
-
-  // Save calculated results to Firestore (optional caching)
-  async saveElectionResults(result: ElectionResult): Promise<void> {
-    try {
-      console.log('💾 [saveElectionResults] Saving to electionResults collection, docId:', result.electionId);
-      const resultRef = doc(db, 'electionResults', result.electionId);
-      const dataToSave = {
-        ...result,
-        lastUpdated: dateToTimestamp(result.lastUpdated),
-      };
-      console.log('💾 [saveElectionResults] Data to save:', dataToSave);
-      await setDoc(resultRef, dataToSave);
-      console.log('✅ [saveElectionResults] Successfully saved election results to Firestore:', result);
-    } catch (error) {
-      console.error('❌ [saveElectionResults] Error saving election results:', error);
-    }
-  },
+      tx.set(voteRef, { elections });
+    });
+  }
 };
