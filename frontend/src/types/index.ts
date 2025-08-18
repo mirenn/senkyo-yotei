@@ -28,7 +28,7 @@ export interface User {
 }
 
 export interface Vote {
-  hashedUserId: string;
+  userId: string;
   elections: {
     [electionId: string]: {
       candidateId: string;

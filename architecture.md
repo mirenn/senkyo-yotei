@@ -57,7 +57,7 @@
   description: string
   startDate: Timestamp
   endDate: Timestamp
-  createdBy: string // hashed user ID
+  createdBy: string // raw user ID
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -70,7 +70,7 @@
   createdAt: Timestamp
 }
 
-/users/{hashedUserId}
+/users/{userId}
 {
   email: string
   name: string
@@ -79,7 +79,7 @@
   lastLogin: Timestamp
 }
 
-/votes/{hashedUserId}
+/votes/{userId}
 {
   elections: {
     [electionId]: {
@@ -117,39 +117,33 @@ service cloud.firestore {
         request.auth.uid != null &&
         resource == null;
       allow update, delete: if request.auth != null && 
-        resource.data.createdBy == getHashedUserId(request.auth.uid);
+        resource.data.createdBy == request.auth.uid;
       
       // Candidates subcollection
       match /candidates/{candidateId} {
         allow read: if true;
         allow create: if request.auth != null;
         allow update, delete: if request.auth != null && 
-          get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy == getHashedUserId(request.auth.uid);
+          get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy == request.auth.uid;
       }
     }
     
     // Users - only readable/writable by the user themselves
-    match /users/{hashedUserId} {
+    match /users/{userId} {
       allow read, write: if request.auth != null && 
-        hashedUserId == getHashedUserId(request.auth.uid);
+        userId == request.auth.uid;
     }
     
     // Votes - only readable/writable by the user themselves
-    match /votes/{hashedUserId} {
+    match /votes/{userId} {
       allow read, write: if request.auth != null && 
-        hashedUserId == getHashedUserId(request.auth.uid);
+        userId == request.auth.uid;
     }
     
     // Election results - readable by all
     match /electionResults/{electionId} {
       allow read: if true;
       allow write: if false; // Only Cloud Functions can update
-    }
-    
-    // Helper function to hash user ID
-    function getHashedUserId(uid) {
-      // This would be implemented in Cloud Functions
-      // Returns SHA-256 hash of uid + salt
     }
   }
 }
@@ -172,7 +166,7 @@ service cloud.firestore {
 ### Real-time Listeners (Client-side)
 - `onSnapshot(collection('elections'))` - Real-time election list
 - `onSnapshot(doc('electionResults/{id}'))` - Real-time vote counts
-- `onSnapshot(doc('votes/{hashedUserId}'))` - User's current votes
+- `onSnapshot(doc('votes/{userId}'))` - User's current votes
 
 ### Vote Management
 - Cloud Function triggered on vote document changes
@@ -185,5 +179,5 @@ service cloud.firestore {
 - **Authorization**: Firestore Security Rules
 - **Data Validation**: Cloud Functions with Zod schemas
 - **Rate Limiting**: Firebase App Check + Cloud Functions
-- **Privacy**: Client-side user ID hashing before storage
+- **Privacy**: Direct user ID storage for simplified management
 - **GDPR Compliance**: Built-in data deletion capabilities

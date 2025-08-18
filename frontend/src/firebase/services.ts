@@ -28,11 +28,7 @@ const dateToTimestamp = (date: Date): Timestamp => {
   return Timestamp.fromDate(date);
 };
 
-// User ID hashing (simplified - in production use proper crypto)
-export const hashUserId = (uid: string): string => {
-  // TODO: Implement proper hashing with salt
-  return btoa(uid).replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-};
+// Note: Previously used hashed user IDs, but now using raw UIDs for simplified management
 
 // Elections Service
 export const electionService = {
@@ -293,7 +289,7 @@ export const voteService = {
     }
     
     return {
-      hashedUserId: uid, // Keep the field name but use raw UID
+      userId: uid, // Using raw UID for simplified management
       elections,
     };
   },

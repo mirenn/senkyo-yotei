@@ -1,13 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Simple hash function for user ID (basic implementation for rules)
-    function simpleHashUserId(uid) {
-      // This mimics the client-side btoa() encoding and character filtering
-      // Note: This is a simplified version and may not be 100% accurate
-      return uid;
-    }
-    
     // Elections - readable by all, writable by authenticated users
     match /elections/{electionId} {
       allow read: if true;
