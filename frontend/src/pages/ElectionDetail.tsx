@@ -312,25 +312,7 @@ const ElectionDetail = () => {
         </div>
       </div>
 
-      {/* User's Current Vote */}
-      {userVote && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-blue-800 font-medium">
-                現在の投票先: {candidates.find(c => c.id === userVote)?.name}
-              </p>
-              <p className="text-blue-600 text-sm">投票は自由に変更・取り消しできます</p>
-            </div>
-            <button
-              onClick={handleCancelVote}
-              className="px-4 py-2 text-sm border border-blue-300 rounded-md text-blue-700 hover:bg-blue-100"
-            >
-              投票を取り消す
-            </button>
-          </div>
-        </div>
-      )}
+  {/* 個別候補ボタン内で取消可能にするため、専用の投票取消ボックスは削除 */}
 
       {/* Candidates List */}
       <div className="space-y-4">
@@ -395,13 +377,13 @@ const ElectionDetail = () => {
                   
                   {state.user ? (
                     <button
-                      onClick={() => handleVote(candidate.id)}
-                      disabled={isUserVote}
-                      className={`px-6 py-2 rounded-md font-medium ${
+                      onClick={() => (isUserVote ? handleCancelVote() : handleVote(candidate.id))}
+                      className={`px-6 py-2 rounded-md font-medium transition-colors ${
                         isUserVote
-                          ? 'bg-blue-600 text-white cursor-default'
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
                       }`}
+                      title={isUserVote ? 'クリックでこの投票を取り消します' : 'この候補者に投票します'}
                     >
                       {isUserVote ? '投票済み' : 'この候補者に投票'}
                     </button>
