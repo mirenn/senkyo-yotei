@@ -29,16 +29,24 @@ export const db = getFirestore(app);
 
 // Connect to emulators if in development mode
 const useEmulator = import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true';
-if (useEmulator) {
+let emulatorsConnected = false;
+
+if (useEmulator && !emulatorsConnected) {
   console.log('Using Firebase Emulators');
   try {
     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    emulatorsConnected = true;
     console.log('Connected to Firebase Emulators');
-  } catch (error) {
-    console.warn('Failed to connect to emulators (they might already be connected):', error);
+  } catch (error: any) {
+    if (error?.message?.includes('already') || error?.code === 'auth/emulator-config-failed') {
+      console.log('Emulators already connected or connection failed (likely already connected)');
+      emulatorsConnected = true;
+    } else {
+      console.warn('Failed to connect to emulators:', error);
+    }
   }
-} else {
+} else if (!useEmulator) {
   console.log('Using production Firebase');
 }
 

@@ -127,6 +127,9 @@ const CreateElection = () => {
     setLoading(true);
     
     try {
+      console.log('Starting election creation process...');
+      console.log('Current user:', state.user);
+      
       const newElection: Omit<Election, 'id'> = {
         title: electionData.title.trim(),
         description: electionData.description.trim(),
@@ -137,9 +140,13 @@ const CreateElection = () => {
         updatedAt: new Date(),
       };
 
+      console.log('Election data prepared:', newElection);
+
       try {
+        console.log('Attempting to create election in Firestore...');
         // Try to create in Firestore
         const electionId = await electionService.createElection(newElection);
+        console.log('Election created with ID:', electionId);
         
         // Create candidates
         const candidatesData = candidates.map(candidate => ({
@@ -149,13 +156,28 @@ const CreateElection = () => {
           createdAt: new Date(),
         }));
         
+        console.log('Creating candidates:', candidatesData);
         await candidateService.createCandidates(electionId, candidatesData);
+        console.log('Candidates created successfully');
         
         alert('選挙が正常に作成されました！');
         navigate(`/elections/${electionId}`);
         
-      } catch (firestoreError) {
-        console.log('Firestore not available, using mock behavior:', firestoreError);
+      } catch (firestoreError: any) {
+        console.error('Firestore error occurred:', firestoreError);
+        console.error('Error type:', typeof firestoreError);
+        console.error('Error code:', firestoreError?.code);
+        console.error('Error message:', firestoreError?.message);
+        console.error('Error stack:', firestoreError?.stack);
+        
+        // Check if it's a specific Firebase Auth error
+        if (firestoreError?.code && firestoreError.code.includes('auth')) {
+          alert('認証エラーが発生しました。再度ログインしてください。');
+          // You might want to redirect to login or refresh auth
+          return;
+        }
+        
+        console.log('Falling back to mock behavior...');
         
         // Simulate API delay for mock behavior
         await new Promise(resolve => setTimeout(resolve, 1500));
@@ -167,10 +189,14 @@ const CreateElection = () => {
         navigate('/elections');
       }
       
-    } catch (error) {
-      console.error('Error creating election:', error);
-      alert('選挙の作成に失敗しました');
+    } catch (error: any) {
+      console.error('Unexpected error creating election:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error code:', error?.code);
+      console.error('Error message:', error?.message);
+      alert(`選挙の作成に失敗しました: ${error?.message || 'Unknown error'}`);
     } finally {
+      console.log('Setting loading to false');
       setLoading(false);
     }
   };

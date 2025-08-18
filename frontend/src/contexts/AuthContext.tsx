@@ -60,14 +60,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed:', user);
       dispatch({ type: 'SET_USER', payload: user });
       
       if (user) {
+        console.log('User is authenticated:', {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL
+        });
+        
         try {
+          console.log('Attempting to fetch user profile from Firestore...');
           // Try to fetch or create user profile in Firestore
           let userProfile = await userService.getUser(user.uid);
+          console.log('Fetched user profile:', userProfile);
           
           if (!userProfile) {
+            console.log('User profile not found, creating new one...');
             // Create new user profile
             const newUserData = {
               email: user.email || '',
@@ -77,12 +88,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               lastLogin: new Date(),
             };
             
+            console.log('Creating user profile with data:', newUserData);
             await userService.createOrUpdateUser(user.uid, newUserData);
+            console.log('User profile created successfully');
+            
             userProfile = {
               id: user.uid,
               ...newUserData,
             };
           } else {
+            console.log('Updating existing user profile with last login...');
             // Update last login
             const updateData = {
               ...userProfile,
@@ -90,11 +105,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
             await userService.createOrUpdateUser(user.uid, updateData);
             userProfile.lastLogin = new Date();
+            console.log('User profile updated successfully');
           }
           
           dispatch({ type: 'SET_USER_PROFILE', payload: userProfile });
-        } catch (error) {
-          console.log('Firestore not available for user profile:', error);
+          console.log('User profile set in context:', userProfile);
+        } catch (error: any) {
+          console.error('Error handling user profile:', error);
+          console.error('Error type:', typeof error);
+          console.error('Error code:', error?.code);
+          console.error('Error message:', error?.message);
+          console.error('Error stack:', error?.stack);
+          
+          console.log('Firestore not available for user profile, using mock data');
           // Create a mock user profile when Firestore is not available
           const mockUserProfile: User = {
             id: user.uid,
@@ -105,8 +128,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             lastLogin: new Date(),
           };
           dispatch({ type: 'SET_USER_PROFILE', payload: mockUserProfile });
+          console.log('Mock user profile set:', mockUserProfile);
         }
       } else {
+        console.log('User is not authenticated, clearing profile');
         dispatch({ type: 'SET_USER_PROFILE', payload: null });
       }
     });
