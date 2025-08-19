@@ -13,7 +13,7 @@
 2. 主な機能 (ユーザー視点)
 3. プライバシーと設計思想
 4. 詳細設計 / 開発ガイドへの導線
-5. 推奨スクリーンショット一覧
+5. UI ギャラリー
 6. 今後のロードマップ / 拡張案
 7. ライセンス / コントリビューション
 
@@ -39,37 +39,27 @@
 ## 4. 詳細設計 / 開発ガイドへの導線
 技術スタック / データモデル / セキュリティルール / 集計アルゴリズム / 不支持マーク実装上の排他制御 などの詳細は `architecture.md` に集約しました。本 README では利用者・評価者向けの概要を中心に記載しています。
 
-## 5. 推奨スクリーンショット一覧 (ご提供いただけると README を更に改善できます)
-| ファイル名案 | 内容 | 撮影ポイント / 注記 |
-|--------------|------|---------------------|
-| screenshot-home.png | 選挙一覧トップ | 未ログイン状態 |
-| screenshot-login.png | Google ログインダイアログ | ポップアップ (実アカウント伏せても可) |
-| screenshot-create-election.png | 選挙作成フォーム | バリデーション表示例があれば尚良し |
-| screenshot-election-detail.png | 選挙詳細 & 候補一覧 | 投票前状態 |
-| screenshot-voted.png | 投票完了状態 | 選択済候補のハイライト |
-| screenshot-realtime-update.png | リアルタイム集計 | 複数タブ操作で増加が反映される様子 (可能なら GIF) |
-| screenshot-dislike-feature.png | 不支持マーク UI | 実装後 / 未実装ならワイヤ案でも可 |
+## 5. UI ギャラリー
+利用イメージを把握するためのスクリーンショット集です。画像は `frontend/public/images/` 配下。
 
-※ 画像は `frontend/public/images/` 配下などに保存し、README から相対パス参照予定。
-
-### 現在提供済みスクリーンショット (サムネイル表示)
+### スクリーンショット (サムネイル)
 
 | 画面 | 画像 | 備考 |
 |------|------|------|
 | ホーム (一覧) | <img src="frontend/public/images/screenshot-home.png" alt="選挙一覧ホーム" width="320" /> | 未ログイン例 |
 | ログインダイアログ | <img src="frontend/public/images/screenshot-login.png" alt="Google ログイン" width="320" /> | ポップアップ表示 |
 | 選挙作成フォーム | <img src="frontend/public/images/screenshot-create-election.png" alt="選挙作成フォーム" width="320" /> | バリデーション例歓迎 |
+| 選挙詳細 | <img src="frontend/public/images/screenshot-election-detail.png" alt="選挙詳細と候補一覧" width="320" /> | 投票前状態例 |
+| 投票完了 | <img src="frontend/public/images/screenshot-voted.png" alt="投票完了状態" width="320" /> | 選択済候補ハイライト |
+| リアルタイム更新 | <img src="frontend/public/images/screenshot-realtime-update.gif" alt="リアルタイム集計更新" width="320" /> | Firestore リスナー動作 (GIF) |
+| 不支持マーク | <img src="frontend/public/images/screenshot-dislike-feature.png" alt="不支持マーク機能" width="320" /> | 不支持 UI 実装例 |
 
-他のスクリーンショット (detail / voted / realtime / dislike など) もご提供いただければ順次ここへ追加します。
-
-## 6. 今後のロードマップ / 拡張案
-- 不支持マーク集計の可視化強化（時系列推移 / 相関分析）
-- 集計 Cloud Function のトランザクション / 冪等性強化
-- App Check 導入 / レートリミット追加
-- 監査ログコレクション (`/auditLogs`) による操作履歴保全
-- 選挙ステータス (予定 / 進行中 / 終了) の自動更新
-- アクセシビリティ改善 (キーボード操作 / ARIA)
-- i18n (日本語 / 英語切替)
+## 6. 今後のロードマップ (必須コアのみ)
+- 選挙ごとのコメント機能（候補や全体への意見共有。スパム/誹謗中傷対策としてレート制限・通報フラグ・後日モデレーション導線を設計）
+- 集計 Cloud Function のトランザクション / 冪等性強化（重複更新・競合時の整合性確保）
+- App Check 導入 + レートリミット（Bot / Abuse 防止と無料枠保護）
+- 監査ログコレクション (`/auditLogs`) による主要操作（選挙作成 / 投票 / 不支持 / コメント）の履歴保全
+- 選挙ステータス (予定 / 進行中 / 終了) の自動更新（開始/終了日時に基づく UI 切替と投票受付制御）
 
 ## 7. ライセンス
 本プロジェクトは Apache License 2.0 の下で提供されます。`LICENSE` ファイルを参照してください。
