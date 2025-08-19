@@ -36,16 +36,21 @@ export const db = getFirestore(app);
 // Connect to emulators if in development mode
 const useFirestoreEmulator = import.meta.env.VITE_USE_FIRESTORE_EMULATOR === 'true';
 const useAuthEmulator = import.meta.env.VITE_USE_AUTH_EMULATOR === 'true';
+const isDevelopment = import.meta.env.DEV;
 let emulatorsConnected = false;
 
 console.log('Environment variables:', {
   VITE_USE_FIRESTORE_EMULATOR: import.meta.env.VITE_USE_FIRESTORE_EMULATOR,
   VITE_USE_AUTH_EMULATOR: import.meta.env.VITE_USE_AUTH_EMULATOR,
+  DEV: import.meta.env.DEV,
+  PROD: import.meta.env.PROD,
   useFirestoreEmulator: useFirestoreEmulator,
-  useAuthEmulator: useAuthEmulator
+  useAuthEmulator: useAuthEmulator,
+  isDevelopment: isDevelopment
 });
 
-if ((useFirestoreEmulator || useAuthEmulator) && !emulatorsConnected) {
+// Only connect to emulators in development mode AND if explicitly enabled
+if ((useFirestoreEmulator || useAuthEmulator) && isDevelopment && !emulatorsConnected) {
   console.log('Connecting to Firebase Emulators...');
   try {
     if (useAuthEmulator) {
