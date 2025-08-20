@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { electionService, candidateService, voteService, resultsService, dislikeService, userService } from '../firebase/services';
+import { electionService, candidateService, voteService, resultsService, dislikeService, userService, commentService } from '../firebase/services';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { type Election, type Candidate, type ElectionResult } from '../types';
+import { type Election, type Candidate, type ElectionResult, type Comment } from '../types';
 
 // ネットワークリクエストが大量発生していた default-avatar.png の無限 onError ループ対策:
 // 以前は onError 内で相対パス '/images/default-avatar.png' を再代入していたため、
@@ -25,6 +25,9 @@ const ElectionDetail = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [adminActionLoading, setAdminActionLoading] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentContent, setCommentContent] = useState('');
+  const [commentLoading, setCommentLoading] = useState(false);
 
   // 投票期間チェック（得票数表示用）
   const isVotingPeriod = (election: Election) => {
@@ -78,7 +81,42 @@ const ElectionDetail = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [id, state.user, refreshing]);
+  }, [id, state.user, refreshing, userProfile?.isAdmin]);
+
+  // コメント読み込み用の関数
+  const loadComments = useCallback(async () => {
+    if (!id) return;
+    
+    try {
+      const commentsData = await commentService.getComments(id);
+      setComments(commentsData);
+    } catch (err) {
+      console.log('Error loading comments:', err);
+    }
+  }, [id]);
+
+  // コメント作成の関数
+  const handleCreateComment = async () => {
+    if (!id || !state.user || !commentContent.trim()) return;
+
+    try {
+      setCommentLoading(true);
+      await commentService.createComment(id, {
+        userId: state.user.uid,
+        userName: state.user.displayName || state.user.email || 'Anonymous',
+        userAvatarUrl: state.user.photoURL || undefined,
+        content: commentContent.trim(),
+      });
+      
+      setCommentContent('');
+      await loadComments(); // コメントを再読み込み
+    } catch (err) {
+      console.error('Error creating comment:', err);
+      setError('コメントの投稿に失敗しました');
+    } finally {
+      setCommentLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -221,6 +259,12 @@ const ElectionDetail = () => {
 
     fetchElectionData();
   }, [id]); // state.userを依存配列から除去して不要な再実行を防ぐ
+
+  // コメントの読み込み
+  useEffect(() => {
+    if (!id) return;
+    loadComments();
+  }, [id, loadComments]);
 
   // electionResults のリアルタイム購読（初回生成含む）
   useEffect(() => {
@@ -553,6 +597,95 @@ const ElectionDetail = () => {
             </div>
           );
         })}
+      </div>
+
+      {/* Comments Section */}
+      <div className="mt-12">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">コメント</h2>
+        
+        {/* Comment Form */}
+        {state.user ? (
+          <div className="mb-8 bg-white rounded-lg shadow p-6">
+            <div className="flex items-start space-x-4">
+              <img
+                src={state.user.photoURL || FALLBACK_AVATAR_DATA_URI}
+                alt={state.user.displayName || 'ユーザーアバター'}
+                className="w-10 h-10 rounded-full"
+                onError={(e) => {
+                  if (e.currentTarget.src !== FALLBACK_AVATAR_DATA_URI) {
+                    e.currentTarget.src = FALLBACK_AVATAR_DATA_URI;
+                    e.currentTarget.onerror = null;
+                  }
+                }}
+              />
+              <div className="flex-1">
+                <textarea
+                  value={commentContent}
+                  onChange={(e) => setCommentContent(e.target.value)}
+                  placeholder="この選挙についてコメントを書く..."
+                  className="w-full p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={3}
+                  disabled={commentLoading}
+                />
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={handleCreateComment}
+                    disabled={commentLoading || !commentContent.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {commentLoading ? 'コメント投稿中...' : 'コメントする'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-8 bg-gray-50 rounded-lg p-6 text-center">
+            <p className="text-gray-600">コメントを投稿するにはログインが必要です</p>
+          </div>
+        )}
+
+        {/* Comments List */}
+        <div className="space-y-4">
+          {comments.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              まだコメントがありません
+            </div>
+          ) : (
+            comments.map((comment) => (
+              <div key={comment.id} className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-start space-x-4">
+                  <img
+                    src={comment.userAvatarUrl || FALLBACK_AVATAR_DATA_URI}
+                    alt={comment.userName}
+                    className="w-10 h-10 rounded-full"
+                    onError={(e) => {
+                      if (e.currentTarget.src !== FALLBACK_AVATAR_DATA_URI) {
+                        e.currentTarget.src = FALLBACK_AVATAR_DATA_URI;
+                        e.currentTarget.onerror = null;
+                      }
+                    }}
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <h4 className="font-medium text-gray-900">{comment.userName}</h4>
+                      <span className="text-sm text-gray-500">
+                        {comment.createdAt.toLocaleDateString('ja-JP', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Back Button */}

@@ -14,7 +14,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { db } from './config';
-import { type Election, type Candidate, type User, type Vote, type ElectionResult } from '../types';
+import { type Election, type Candidate, type User, type Vote, type ElectionResult, type Comment } from '../types';
 
 // Helper function to convert Firestore Timestamp to Date
 const timestampToDate = (timestamp: any): Date => {
@@ -512,5 +512,49 @@ export const dislikeService = {
       };
       tx.set(voteRef, { elections });
     });
+  }
+};
+
+// Comments Service
+export const commentService = {
+  // Get comments for an election
+  async getComments(electionId: string): Promise<Comment[]> {
+    const commentsRef = collection(db, 'elections', electionId, 'comments');
+    const q = query(commentsRef, orderBy('createdAt', 'asc'));
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      electionId,
+      ...doc.data(),
+      createdAt: timestampToDate(doc.data().createdAt),
+      updatedAt: doc.data().updatedAt ? timestampToDate(doc.data().updatedAt) : undefined,
+    })) as Comment[];
+  },
+
+  // Create a comment
+  async createComment(electionId: string, commentData: Omit<Comment, 'id' | 'electionId' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const commentsRef = collection(db, 'elections', electionId, 'comments');
+    const docRef = await addDoc(commentsRef, {
+      ...commentData,
+      createdAt: dateToTimestamp(new Date()),
+    });
+    
+    return docRef.id;
+  },
+
+  // Update a comment (if needed for editing functionality later)
+  async updateComment(electionId: string, commentId: string, content: string): Promise<void> {
+    const commentRef = doc(db, 'elections', electionId, 'comments', commentId);
+    await updateDoc(commentRef, {
+      content,
+      updatedAt: dateToTimestamp(new Date()),
+    });
+  },
+
+  // Delete a comment (if needed for moderation later)
+  async deleteComment(electionId: string, commentId: string): Promise<void> {
+    const commentRef = doc(db, 'elections', electionId, 'comments', commentId);
+    await deleteDoc(commentRef);
   }
 };
