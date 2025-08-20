@@ -60,3 +60,14 @@ export interface ElectionResult {
   };
   lastUpdated: Date;
 }
+
+export interface Comment {
+  id: string;
+  electionId: string;
+  userId: string;
+  userName: string;
+  userAvatarUrl?: string;
+  content: string;
+  createdAt: Date;
+  updatedAt?: Date;
+}

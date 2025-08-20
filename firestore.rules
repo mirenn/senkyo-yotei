@@ -20,6 +20,17 @@ service cloud.firestore {
           (request.auth.uid == get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy ||
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
       }
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.auth != null && 
+          request.auth.uid != null &&
+          request.auth.uid == request.resource.data.userId;
+        allow update, delete: if request.auth != null && 
+          (request.auth.uid == resource.data.userId ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+      }
     }
     
     // Users - readable/writable by the user themselves (using raw UID)
