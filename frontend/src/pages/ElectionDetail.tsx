@@ -44,7 +44,7 @@ const ElectionDetail = () => {
     try {
       setRefreshing(true);
       const [candidatesData, resultsData] = await Promise.all([
-        candidateService.getCandidates(id),
+        candidateService.getCandidates(id, userProfile?.isAdmin), // Include inactive candidates only for admins
         resultsService.getElectionResults(id)
       ]);
 
@@ -89,10 +89,17 @@ const ElectionDetail = () => {
         setError(null);
 
         try {
-          // Try to fetch from Firestore
+          // First fetch user profile if authenticated to determine admin status
+          let userProfileData = null;
+          if (state.user) {
+            userProfileData = await userService.getUser(state.user.uid);
+            setUserProfile(userProfileData);
+          }
+          
+          // Then fetch other data with proper admin status
           const [electionData, candidatesData, resultsData] = await Promise.all([
             electionService.getElection(id),
-            candidateService.getCandidates(id),
+            candidateService.getCandidates(id, userProfileData?.isAdmin), // Include inactive candidates only for admins
             resultsService.getElectionResults(id)
           ]);
 
@@ -116,17 +123,12 @@ const ElectionDetail = () => {
 
             // Fetch user's vote if authenticated
             if (state.user) {
-              const [userVotes, userProfileData] = await Promise.all([
-                voteService.getUserVotes(state.user.uid),
-                userService.getUser(state.user.uid)
-              ]);
+              const userVotes = await voteService.getUserVotes(state.user.uid);
               
               if (userVotes?.elections[id]) {
                 setUserVote(userVotes.elections[id].candidateId);
                 setUserDislikes(userVotes.elections[id].dislikedCandidates || []);
               }
-              
-              setUserProfile(userProfileData);
             }
           } else {
             throw new Error('Election not found in Firestore');
@@ -156,6 +158,7 @@ const ElectionDetail = () => {
               description: '経済活性化と教育改革を推進します',
               imageUrl: '/images/candidate1.jpg',
               createdAt: new Date('2024-08-01'),
+              status: 'active',
             },
             {
               id: 'candidate2',
@@ -164,6 +167,7 @@ const ElectionDetail = () => {
               description: '福祉の充実と環境保護に取り組みます',
               imageUrl: '/images/candidate2.jpg',
               createdAt: new Date('2024-08-01'),
+              status: 'active',
             },
             {
               id: 'candidate3',
@@ -172,6 +176,7 @@ const ElectionDetail = () => {
               description: 'インフラ整備と地域振興を重視します',
               imageUrl: '/images/candidate3.jpg',
               createdAt: new Date('2024-08-01'),
+              status: 'active',
             },
           ];
 
@@ -466,7 +471,14 @@ const ElectionDetail = () => {
                     }}
                   />
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900">{candidate.name}</h3>
+                    <div className="flex items-center space-x-3">
+                      <h3 className="text-xl font-bold text-gray-900">{candidate.name}</h3>
+                      {candidate.status === 'inactive' && (
+                        <span className="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded-full">
+                          非アクティブ
+                        </span>
+                      )}
+                    </div>
                     <p className="text-gray-600 mt-2">{candidate.description}</p>
                   </div>
                 </div>

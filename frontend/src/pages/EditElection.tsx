@@ -21,6 +21,8 @@ const EditElection = () => {
   const [candidates, setCandidates] = useState<Omit<Candidate, 'id' | 'electionId' | 'createdAt'>[]>([]);
   const [existingCandidates, setExistingCandidates] = useState<Candidate[]>([]);
   const [election, setElection] = useState<Election | null>(null);
+  const [showInactiveCandidates, setShowInactiveCandidates] = useState(false);
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -32,7 +34,7 @@ const EditElection = () => {
       try {
         const [electionData, candidatesData, userData] = await Promise.all([
           electionService.getElection(id),
-          candidateService.getCandidates(id),
+          candidateService.getCandidates(id, true), // Include inactive candidates for editing
           userService.getUser(state.user.uid)
         ]);
 
@@ -48,6 +50,7 @@ const EditElection = () => {
           return;
         }
 
+        setUserIsAdmin(userData?.isAdmin || false);
         setElection(electionData);
         
         // Format dates for input fields
@@ -72,6 +75,7 @@ const EditElection = () => {
           name: c.name,
           description: c.description,
           imageUrl: c.imageUrl || '',
+          status: c.status || 'active',
         })));
 
       } catch (error) {
@@ -146,13 +150,34 @@ const EditElection = () => {
   };
 
   const addCandidate = () => {
-    setCandidates(prev => [...prev, { name: '', description: '', imageUrl: '' }]);
+    setCandidates(prev => [...prev, { name: '', description: '', imageUrl: '', status: 'active' }]);
   };
 
   const removeCandidate = (index: number) => {
     if (candidates.length > 2) {
-      setCandidates(prev => prev.filter((_, i) => i !== index));
+      setCandidates(prev => {
+        const updated = [...prev];
+        // Instead of removing, mark as inactive if it's an existing candidate
+        if (existingCandidates[index]) {
+          updated[index] = { ...updated[index], status: 'inactive' };
+        } else {
+          // If it's a new candidate (not yet saved), we can actually remove it
+          updated.splice(index, 1);
+        }
+        return updated;
+      });
     }
+  };
+
+  const toggleCandidateStatus = (index: number) => {
+    setCandidates(prev => {
+      const updated = [...prev];
+      updated[index] = { 
+        ...updated[index], 
+        status: updated[index].status === 'active' ? 'inactive' : 'active' 
+      };
+      return updated;
+    });
   };
 
   const validateForm = (): boolean => {
@@ -230,15 +255,18 @@ const EditElection = () => {
       await electionService.updateElection(election.id, updates);
       console.log('Election updated successfully');
 
-      // Update candidates
-      const candidatesToUpdate = candidates.map((candidate, index) => ({
-        name: candidate.name.trim(),
-        description: candidate.description.trim(),
-        imageUrl: candidate.imageUrl || '',
-        electionId: election.id,
-        id: existingCandidates[index]?.id || `temp_${index}`, // Use existing ID or temporary for new candidates
-        createdAt: existingCandidates[index]?.createdAt || new Date(),
-      }));
+      // Update candidates with status management
+      const candidatesToUpdate = candidates
+        .filter(candidate => showInactiveCandidates || candidate.status === 'active') // Only include visible candidates unless showing all
+        .map((candidate, index) => ({
+          name: candidate.name.trim(),
+          description: candidate.description.trim(),
+          imageUrl: candidate.imageUrl || '',
+          status: candidate.status || 'active',
+          electionId: election.id,
+          id: existingCandidates[index]?.id || `temp_${index}`, // Use existing ID or temporary for new candidates
+          createdAt: existingCandidates[index]?.createdAt || new Date(),
+        }));
 
       await candidateService.updateElectionCandidates(election.id, candidatesToUpdate);
       console.log('Candidates updated successfully');
@@ -345,30 +373,82 @@ const EditElection = () => {
         {/* Candidates */}
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">候補者 ({candidates.length}名)</h2>
-            <button
-              type="button"
-              onClick={addCandidate}
-              className="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              + 候補者を追加
-            </button>
+            <h2 className="text-xl font-semibold text-gray-900">
+              候補者 ({candidates.filter(c => showInactiveCandidates || c.status === 'active').length}名)
+            </h2>
+            <div className="flex items-center space-x-4">
+              {userIsAdmin && (
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={showInactiveCandidates}
+                    onChange={(e) => setShowInactiveCandidates(e.target.checked)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-gray-600">非アクティブ候補者を表示</span>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={addCandidate}
+                className="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                + 候補者を追加
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
-            {candidates.map((candidate, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
+            {candidates
+              .map((candidate, index) => ({ candidate, index }))
+              .filter(({ candidate }) => showInactiveCandidates || candidate.status === 'active')
+              .map(({ candidate, index }) => (
+              <div 
+                key={index} 
+                className={`border rounded-lg p-4 ${
+                  candidate.status === 'inactive' 
+                    ? 'border-gray-300 bg-gray-50 opacity-75' 
+                    : 'border-gray-200'
+                }`}
+              >
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-medium text-gray-900">候補者 {index + 1}</h3>
-                  {candidates.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => removeCandidate(index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      削除
-                    </button>
-                  )}
+                  <div className="flex items-center space-x-3">
+                    <h3 className="text-lg font-medium text-gray-900">候補者 {index + 1}</h3>
+                    {candidate.status === 'inactive' && (
+                      <span className="px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded-full">
+                        非アクティブ
+                      </span>
+                    )}
+                    {candidate.status === 'active' && (
+                      <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                        アクティブ
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {userIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => toggleCandidateStatus(index)}
+                        className={`px-3 py-1 text-sm rounded-md ${
+                          candidate.status === 'active'
+                            ? 'bg-gray-600 text-white hover:bg-gray-700'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {candidate.status === 'active' ? '非表示にする' : '表示する'}
+                      </button>
+                    )}
+                    {candidates.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeCandidate(index)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        削除
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-3">

@@ -17,6 +17,7 @@ export interface Candidate {
   description: string;
   imageUrl: string;
   createdAt: Date;
+  status: 'active' | 'inactive'; // For hiding candidates instead of deletion
 }
 
 export interface User {

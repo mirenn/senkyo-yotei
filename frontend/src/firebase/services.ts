@@ -147,18 +147,22 @@ export const electionService = {
 
 // Candidates Service
 export const candidateService = {
-  // Get candidates for an election
-  async getCandidates(electionId: string): Promise<Candidate[]> {
+  // Get candidates for an election (with optional filtering by status)
+  async getCandidates(electionId: string, includeInactive: boolean = false): Promise<Candidate[]> {
     const candidatesRef = collection(db, 'elections', electionId, 'candidates');
     const q = query(candidatesRef, orderBy('createdAt', 'asc'));
     const snapshot = await getDocs(q);
     
-    return snapshot.docs.map(doc => ({
+    const candidates = snapshot.docs.map(doc => ({
       id: doc.id,
       electionId,
       ...doc.data(),
+      status: doc.data().status || 'active', // Default to active if status not set
       createdAt: timestampToDate(doc.data().createdAt),
     })) as Candidate[];
+
+    // Filter out inactive candidates unless explicitly requested (for admins)
+    return includeInactive ? candidates : candidates.filter(candidate => candidate.status === 'active');
   },
 
   // Create candidate
@@ -166,6 +170,7 @@ export const candidateService = {
     const candidatesRef = collection(db, 'elections', electionId, 'candidates');
     const docRef = await addDoc(candidatesRef, {
       ...candidateData,
+      status: candidateData.status || 'active', // Default to active
       createdAt: dateToTimestamp(candidateData.createdAt),
     });
     
@@ -180,6 +185,7 @@ export const candidateService = {
       const candidateRef = doc(collection(db, 'elections', electionId, 'candidates'));
       batch.set(candidateRef, {
         ...candidateData,
+        status: candidateData.status || 'active', // Default to active
         createdAt: dateToTimestamp(new Date()),
       });
     });
@@ -187,11 +193,20 @@ export const candidateService = {
     await batch.commit();
   },
 
-  // Update all candidates for an election (for editing)
+  // Update candidate status (activate/deactivate)
+  async updateCandidateStatus(electionId: string, candidateId: string, status: 'active' | 'inactive'): Promise<void> {
+    const candidateRef = doc(db, 'elections', electionId, 'candidates', candidateId);
+    await updateDoc(candidateRef, {
+      status,
+      updatedAt: dateToTimestamp(new Date()),
+    });
+  },
+
+  // Update all candidates for an election (for editing) - now with status management
   async updateElectionCandidates(electionId: string, candidates: Candidate[]): Promise<void> {
     const batch = writeBatch(db);
     
-    // First, get existing candidates to see which ones to delete
+    // First, get existing candidates to see which ones to deactivate instead of delete
     const existingCandidatesRef = collection(db, 'elections', electionId, 'candidates');
     const existingSnapshot = await getDocs(existingCandidatesRef);
     const existingIds = new Set(existingSnapshot.docs.map(doc => doc.id));
@@ -207,6 +222,7 @@ export const candidateService = {
           name: candidate.name,
           description: candidate.description,
           imageUrl: candidate.imageUrl,
+          status: candidate.status || 'active', // Default to active
           createdAt: dateToTimestamp(new Date()),
         });
       } else {
@@ -216,17 +232,22 @@ export const candidateService = {
           name: candidate.name,
           description: candidate.description,
           imageUrl: candidate.imageUrl,
+          status: candidate.status || 'active', // Preserve or set status
           createdAt: dateToTimestamp(candidate.createdAt),
+          updatedAt: dateToTimestamp(new Date()),
         }, { merge: true });
         updatedIds.add(candidate.id);
       }
     });
     
-    // Delete candidates that are no longer in the list
+    // Mark candidates as inactive instead of deleting them to preserve voting history
     existingIds.forEach(id => {
       if (!updatedIds.has(id)) {
         const candidateRef = doc(db, 'elections', electionId, 'candidates', id);
-        batch.delete(candidateRef);
+        batch.update(candidateRef, {
+          status: 'inactive',
+          updatedAt: dateToTimestamp(new Date()),
+        });
       }
     });
     

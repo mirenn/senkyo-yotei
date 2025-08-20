@@ -17,8 +17,8 @@ const CreateElection = () => {
   });
   
   const [candidates, setCandidates] = useState<Omit<Candidate, 'id' | 'electionId' | 'createdAt'>[]>([
-    { name: '', description: '', imageUrl: '' },
-    { name: '', description: '', imageUrl: '' },
+    { name: '', description: '', imageUrl: '', status: 'active' },
+    { name: '', description: '', imageUrl: '', status: 'active' },
   ]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -61,7 +61,7 @@ const CreateElection = () => {
   };
 
   const addCandidate = () => {
-    setCandidates(prev => [...prev, { name: '', description: '', imageUrl: '' }]);
+    setCandidates(prev => [...prev, { name: '', description: '', imageUrl: '', status: 'active' }]);
   };
 
   const removeCandidate = (index: number) => {
@@ -154,6 +154,7 @@ const CreateElection = () => {
           name: candidate.name.trim(),
           description: candidate.description.trim(),
           imageUrl: candidate.imageUrl.trim() || '/images/default-avatar.png',
+          status: candidate.status || 'active', // Include status field
           createdAt: new Date(),
         }));
         
