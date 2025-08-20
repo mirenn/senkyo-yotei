@@ -86,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               avatarUrl: user.photoURL || '',
               createdAt: new Date(),
               lastLogin: new Date(),
+              isAdmin: true, // Default to admin as per requirement
             };
             
             console.log('Creating user profile with data:', newUserData);
@@ -126,6 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             avatarUrl: user.photoURL || '',
             createdAt: new Date(),
             lastLogin: new Date(),
+            isAdmin: true, // Default to admin as per requirement
           };
           dispatch({ type: 'SET_USER_PROFILE', payload: mockUserProfile });
           console.log('Mock user profile set:', mockUserProfile);

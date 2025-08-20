@@ -7,6 +7,7 @@ export interface Election {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  status: 'active' | 'inactive'; // For hiding elections instead of deletion
 }
 
 export interface Candidate {
@@ -16,6 +17,7 @@ export interface Candidate {
   description: string;
   imageUrl: string;
   createdAt: Date;
+  status: 'active' | 'inactive'; // For hiding candidates instead of deletion
 }
 
 export interface User {
@@ -25,6 +27,7 @@ export interface User {
   avatarUrl: string;
   createdAt: Date;
   lastLogin: Date;
+  isAdmin: boolean; // Admin flag for managing all elections
 }
 
 export interface Vote {
