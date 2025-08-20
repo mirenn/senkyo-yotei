@@ -7,16 +7,18 @@ service cloud.firestore {
       allow create: if request.auth != null && 
         request.auth.uid != null &&
         resource == null;
-      // For update/delete, check if the user is the creator using the raw UID
+      // For update/delete, check if the user is the creator using the raw UID OR is admin
       allow update, delete: if request.auth != null && 
-        request.auth.uid == resource.data.createdBy;
+        (request.auth.uid == resource.data.createdBy ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
       
       // Candidates subcollection
       match /candidates/{candidateId} {
         allow read: if true;
         allow create: if request.auth != null;
         allow update, delete: if request.auth != null && 
-          request.auth.uid == get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy;
+          (request.auth.uid == get(/databases/$(database)/documents/elections/$(electionId)).data.createdBy ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
       }
     }
     

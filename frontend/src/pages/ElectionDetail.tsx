@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { electionService, candidateService, voteService, resultsService, dislikeService } from '../firebase/services';
+import { electionService, candidateService, voteService, resultsService, dislikeService, userService } from '../firebase/services';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { type Election, type Candidate, type ElectionResult } from '../types';
@@ -23,6 +23,8 @@ const ElectionDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
 
   // 投票期間チェック（得票数表示用）
   const isVotingPeriod = (election: Election) => {
@@ -114,11 +116,17 @@ const ElectionDetail = () => {
 
             // Fetch user's vote if authenticated
             if (state.user) {
-              const userVotes = await voteService.getUserVotes(state.user.uid);
+              const [userVotes, userProfileData] = await Promise.all([
+                voteService.getUserVotes(state.user.uid),
+                userService.getUser(state.user.uid)
+              ]);
+              
               if (userVotes?.elections[id]) {
                 setUserVote(userVotes.elections[id].candidateId);
                 setUserDislikes(userVotes.elections[id].dislikedCandidates || []);
               }
+              
+              setUserProfile(userProfileData);
             }
           } else {
             throw new Error('Election not found in Firestore');
@@ -137,6 +145,7 @@ const ElectionDetail = () => {
             createdBy: 'user1',
             createdAt: new Date('2024-08-01'),
             updatedAt: new Date('2024-08-01'),
+            status: 'active',
           };
 
           const mockCandidates: Candidate[] = [
@@ -299,6 +308,28 @@ const ElectionDetail = () => {
     }
   };
 
+  // Admin functions
+  const handleToggleElectionStatus = async () => {
+    if (!election || !userProfile?.isAdmin) return;
+
+    setAdminActionLoading(true);
+    try {
+      const newStatus = election.status === 'active' ? 'inactive' : 'active';
+      await electionService.updateElection(election.id, { status: newStatus });
+      
+      setElection(prev => prev ? { ...prev, status: newStatus } : null);
+      alert(`選挙を${newStatus === 'active' ? '有効' : '無効'}にしました`);
+    } catch (error) {
+      console.error('Error toggling election status:', error);
+      alert('ステータスの変更に失敗しました');
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
+  // Check if user can edit this election (creator or admin)
+  const canEdit = election && state.user && (election.createdBy === state.user.uid || userProfile?.isAdmin);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-64">
@@ -353,6 +384,51 @@ const ElectionDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Admin Controls */}
+      {canEdit && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            {userProfile?.isAdmin ? '管理者操作' : '作成者操作'}
+          </h2>
+          <div className="flex flex-wrap gap-4">
+            <Link
+              to={`/elections/${election.id}/edit`}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              ✏️ 選挙を編集
+            </Link>
+            
+            {userProfile?.isAdmin && (
+              <button
+                onClick={handleToggleElectionStatus}
+                disabled={adminActionLoading}
+                className={`px-4 py-2 rounded-md focus:outline-none focus:ring-2 ${
+                  election.status === 'active'
+                    ? 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
+                    : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500'
+                } disabled:opacity-50`}
+              >
+                {adminActionLoading ? '処理中...' : 
+                 election.status === 'active' ? '🚫 選挙を無効化' : '✅ 選挙を有効化'}
+              </button>
+            )}
+          </div>
+          
+          <div className="mt-4 text-sm text-gray-600">
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              election.status === 'active' 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-red-100 text-red-800'
+            }`}>
+              ステータス: {election.status === 'active' ? '有効' : '無効'}
+            </span>
+            {userProfile?.isAdmin && (
+              <span className="ml-4 text-blue-600">管理者権限で表示中</span>
+            )}
+          </div>
+        </div>
+      )}
 
   {/* 個別候補ボタン内で取消可能にするため、専用の投票取消ボックスは削除 */}
 
