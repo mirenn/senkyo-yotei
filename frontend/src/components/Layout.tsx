@@ -1,6 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import ProfileSettings from './ProfileSettings';
 
 interface LayoutProps {
   children: ReactNode;
@@ -8,6 +9,23 @@ interface LayoutProps {
 
 const Layout = ({ children }: LayoutProps) => {
   const { state, signInWithGoogle, logout } = useAuth();
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
+
+  // Helper function to get display name (privacy-aware)
+  const getDisplayName = () => {
+    if (state.userProfile?.displayName) {
+      return state.userProfile.displayName;
+    }
+    return '匿名ユーザー';
+  };
+
+  // Helper function to get avatar URL (privacy-aware)
+  const getAvatarUrl = () => {
+    if (state.userProfile?.showAvatar && state.user?.photoURL) {
+      return state.user.photoURL;
+    }
+    return '/default-avatar.png'; // Always use fallback when privacy mode is on
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -42,12 +60,18 @@ const Layout = ({ children }: LayoutProps) => {
                 <div className="flex items-center space-x-4">
                   <img
                     className="h-8 w-8 rounded-full"
-                    src={state.user.photoURL || '/default-avatar.png'}
-                    alt={state.user.displayName || 'User'}
+                    src={getAvatarUrl()}
+                    alt={getDisplayName()}
                   />
                   <span className="text-sm font-medium text-gray-900">
-                    {state.user.displayName}
+                    {getDisplayName()}
                   </span>
+                  <button
+                    onClick={() => setShowProfileSettings(true)}
+                    className="text-gray-600 hover:text-blue-600 px-2 py-1 text-sm font-medium"
+                  >
+                    設定
+                  </button>
                   <button
                     onClick={logout}
                     className="bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-red-700"
@@ -71,6 +95,11 @@ const Layout = ({ children }: LayoutProps) => {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         {children}
       </main>
+
+      <ProfileSettings
+        isOpen={showProfileSettings}
+        onClose={() => setShowProfileSettings(false)}
+      />
     </div>
   );
 };
