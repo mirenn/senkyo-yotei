@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { electionService, candidateService, voteService, resultsService, dislikeService, userService, commentService } from '../firebase/services';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { type Election, type Candidate, type ElectionResult, type Comment } from '../types';
+import { type Election, type Candidate, type ElectionResult, type Comment, type User } from '../types';
 
 // ネットワークリクエストが大量発生していた default-avatar.png の無限 onError ループ対策:
 // 以前は onError 内で相対パス '/images/default-avatar.png' を再代入していたため、
@@ -23,11 +23,26 @@ const ElectionDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<User | null>(null);
   const [adminActionLoading, setAdminActionLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentContent, setCommentContent] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
+
+  // Helper functions for privacy-aware display
+  const getDisplayName = () => {
+    if (state.userProfile?.displayName) {
+      return state.userProfile.displayName;
+    }
+    return '匿名ユーザー';
+  };
+
+  const getAvatarUrl = () => {
+    if (state.userProfile?.showAvatar && state.user?.photoURL) {
+      return state.user.photoURL;
+    }
+    return FALLBACK_AVATAR_DATA_URI; // Always use fallback when privacy mode is on
+  };
 
   // 投票期間チェック（得票数表示用）
   const isVotingPeriod = (election: Election) => {
@@ -103,8 +118,8 @@ const ElectionDetail = () => {
       setCommentLoading(true);
       await commentService.createComment(id, {
         userId: state.user.uid,
-        userName: state.user.displayName || state.user.email || 'Anonymous',
-        userAvatarUrl: state.user.photoURL || undefined,
+        userName: getDisplayName(), // Use privacy-aware display name
+        userAvatarUrl: state.userProfile?.showAvatar ? (state.user.photoURL || undefined) : undefined, // Only include avatar if user opted in
         content: commentContent.trim(),
       });
       
@@ -608,8 +623,8 @@ const ElectionDetail = () => {
           <div className="mb-8 bg-white rounded-lg shadow p-6">
             <div className="flex items-start space-x-4">
               <img
-                src={state.user.photoURL || FALLBACK_AVATAR_DATA_URI}
-                alt={state.user.displayName || 'ユーザーアバター'}
+                src={getAvatarUrl()}
+                alt={getDisplayName()}
                 className="w-10 h-10 rounded-full"
                 onError={(e) => {
                   if (e.currentTarget.src !== FALLBACK_AVATAR_DATA_URI) {

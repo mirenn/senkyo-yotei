@@ -24,7 +24,9 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  displayName?: string; // Custom display name for privacy (different from Google name)
   avatarUrl: string;
+  showAvatar?: boolean; // Whether to show avatar or use fallback
   createdAt: Date;
   lastLogin: Date;
   isAdmin: boolean; // Admin flag for managing all elections

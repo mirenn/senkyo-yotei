@@ -43,6 +43,7 @@ interface AuthContextType {
   state: AuthState;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshUserProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -79,11 +80,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
           if (!userProfile) {
             console.log('User profile not found, creating new one...');
-            // Create new user profile
+            // Create new user profile with privacy-friendly defaults
             const newUserData = {
               email: user.email || '',
               name: user.displayName || '',
+              displayName: '', // Start with empty - user will set their own
               avatarUrl: user.photoURL || '',
+              showAvatar: false, // Default to NOT showing Google avatar for privacy
               createdAt: new Date(),
               lastLogin: new Date(),
               isAdmin: true, // Default to admin as per requirement
@@ -119,12 +122,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error stack:', error?.stack);
           
           console.log('Firestore not available for user profile, using mock data');
-          // Create a mock user profile when Firestore is not available
+          // Create a mock user profile when Firestore is not available with privacy defaults
           const mockUserProfile: User = {
             id: user.uid,
             email: user.email || '',
             name: user.displayName || '',
+            displayName: '', // Start with empty - user will set their own
             avatarUrl: user.photoURL || '',
+            showAvatar: false, // Default to NOT showing Google avatar for privacy
             createdAt: new Date(),
             lastLogin: new Date(),
             isAdmin: true, // Default to admin as per requirement
@@ -160,10 +165,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshUserProfile = async () => {
+    if (!state.user) return;
+
+    try {
+      const userProfile = await userService.getUser(state.user.uid);
+      if (userProfile) {
+        dispatch({ type: 'SET_USER_PROFILE', payload: userProfile });
+      }
+    } catch (error) {
+      console.error('Error refreshing user profile:', error);
+    }
+  };
+
   const value = {
     state,
     signInWithGoogle,
     logout,
+    refreshUserProfile,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
