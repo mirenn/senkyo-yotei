@@ -50,7 +50,38 @@
 | リアルタイム更新 | <img src="frontend/public/images/screenshot-realtime-update.gif" alt="リアルタイム集計更新" width="320" /> | Firestore リスナー動作 (GIF) |
 | 不支持マーク | <img src="frontend/public/images/screenshot-dislike-feature.png" alt="不支持マーク機能" width="320" /> | 不支持 UI 実装例 |
 
-## 6. 今後のロードマップ (必須コアのみ)
+## 6. 開発・デプロイ
+
+### 開発環境の起動
+開発環境では、Firebaseエミュレーターとフロントエンドの開発サーバーを両方起動する必要があります：
+
+```bash
+# Terminal 1: Firebaseエミュレーター起動
+firebase emulators:start
+
+# Terminal 2: フロントエンド開発サーバー起動
+cd frontend
+npm run dev
+```
+
+### 本番デプロイ（一撃実行）
+ビルドからデプロイまでを一括実行できます：
+
+```bash
+# ホスティングのみ（最も高速）
+npm run deploy:hosting
+
+# Cloud Functionsのみ
+npm run deploy:functions
+
+# 完全デプロイ（hosting + functions + firestore rules）
+npm run deploy:all
+
+# 全てをデプロイ（シンプル）
+npm run deploy
+```
+
+## 7. 今後のロードマップ (必須コアのみ)
 - 選挙ごとのコメント機能（候補や全体への意見共有。スパム/誹謗中傷対策としてレート制限・通報フラグ・後日モデレーション導線を設計）
 - 選挙の編集・管理機能（現在は、選挙を作成したら編集も削除もできない。管理者権限による全選挙の編集・無効化機能追加。なお、削除ではなく選挙ステータス制御による非表示化で履歴保全を重視）
 - 集計 Cloud Function のトランザクション / 冪等性強化（重複更新・競合時の整合性確保）
@@ -59,7 +90,7 @@
 - 選挙ステータス (予定 / 進行中 / 終了) の自動更新（開始/終了日時に基づく UI 切替と投票受付制御）
 
 
-## 7. ライセンス
+## 8. ライセンス
 本プロジェクトは Apache License 2.0 の下で提供されます。`LICENSE` ファイルを参照してください。
 メモ：変更するかもしれません。
 
