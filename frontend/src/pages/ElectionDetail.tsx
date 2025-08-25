@@ -116,12 +116,21 @@ const ElectionDetail = () => {
 
     try {
       setCommentLoading(true);
-      await commentService.createComment(id, {
+      
+      // コメントデータを構築（undefinedフィールドは除外）
+      const commentData: any = {
         userId: state.user.uid,
         userName: getDisplayName(), // Use privacy-aware display name
-        userAvatarUrl: state.userProfile?.showAvatar ? (state.user.photoURL || undefined) : undefined, // Only include avatar if user opted in
         content: commentContent.trim(),
-      });
+      };
+      
+      // アバターURLが有効な場合のみ追加
+      const avatarUrl = state.userProfile?.showAvatar ? state.user.photoURL : null;
+      if (avatarUrl) {
+        commentData.userAvatarUrl = avatarUrl;
+      }
+      
+      await commentService.createComment(id, commentData);
       
       setCommentContent('');
       await loadComments(); // コメントを再読み込み
